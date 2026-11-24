@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { BlocklyEditor } from "./components/BlocklyEditor";
-import { fetchCatalog, fetchSuites, fetchSuite, saveSuite, updateSuite, deleteSuite, previewDocument, validateDocument, initWorkspace, catalogToKeywordOptions } from "./api/client";
+import { fetchCatalog, fetchSuites, fetchSuite, saveSuite, updateSuite, deleteSuite, previewDocument, validateDocument, initWorkspace, runSuite, runExportUrl, catalogToKeywordOptions } from "./api/client";
+import type { RunSummary } from "./api/client";
 import type { CanvasDocument } from "./types/canvas";
 
 interface SuiteEntry {
@@ -21,6 +22,8 @@ function App() {
   const [validation, setValidation] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [run, setRun] = useState<RunSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadCatalog = useCallback(async () => {
@@ -77,6 +80,7 @@ function App() {
     setDocument(doc);
     setValidation(null);
     setPreview(null);
+    setRun(null);
   }, []);
 
   const handleSave = async () => {
@@ -89,8 +93,7 @@ function App() {
         await updateSuite(stem, document);
       } else {
         const result = await saveSuite(document);
-        setSuites((prev) => [result, ...prev]);
-        setCurrentSuite(result);
+        setCurrentSuite({ stem: result.stem, name: document.name, tests: document.tests.length, keywords: document.keywords.length, updated: new Date().toISOString() });
       }
       await loadSuites();
       setError(null);
@@ -99,6 +102,25 @@ function App() {
       console.error(e);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRun = async () => {
+    if (!document || !currentSuite) return;
+    setRunning(true);
+    setError(null);
+    setRun(null);
+    try {
+      // Make sure the workspace copy matches what is on screen.
+      await updateSuite(currentSuite.stem, document);
+      const summary = await runSuite(currentSuite.stem);
+      setRun(summary);
+      if (summary.status !== "passed" && summary.error) setError(summary.error);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Run failed");
+      console.error(e);
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -202,6 +224,9 @@ function App() {
                 <button onClick={handlePreview}>Preview</button>
                 <button onClick={() => handleValidate(false)}>Validate</button>
                 <button onClick={() => handleValidate(true)}>Dry Run</button>
+                <button onClick={handleRun} disabled={running || !currentSuite} className="run">
+                  {running ? "Running..." : "▶ Run"}
+                </button>
                 {currentSuite && (
                   <button onClick={handleDelete} className="danger">
                     Delete
@@ -219,8 +244,36 @@ function App() {
                   />
                 </div>
 
-                {(preview || validation) && (
+                {(preview || validation || run) && (
                   <aside className="preview-pane">
+                    {run && (
+                      <section className="preview-section">
+                        <h3>Run Result</h3>
+                        <div className={`validation-status ${run.status === "passed" ? "ok" : "fail"}`}>
+                          {run.status === "passed" ? "✓ Passed" : `✗ ${run.status}`}
+                          <span>
+                            {run.passed}/{run.total} passed · {run.duration_ms} ms
+                          </span>
+                        </div>
+                        {run.error && <p className="run-error">{run.error}</p>}
+                        <ul className="run-cases">
+                          {run.cases.map((c, i) => (
+                            <li key={i} className={c.status.toLowerCase()}>
+                              <strong>{c.status}</strong> {c.name}
+                              <span className="run-case-time">{c.elapsed_ms} ms</span>
+                              {c.message && <em>{c.message}</em>}
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="run-exports">
+                          <a href={runExportUrl(run.run_id, "junit")}>JUnit XML</a>
+                          <a href={runExportUrl(run.run_id, "results-csv")}>Results CSV</a>
+                          <a href={runExportUrl(run.run_id, "results-json")}>Results JSON</a>
+                          <a href={runExportUrl(run.run_id, "bundle")}>Bundle ZIP</a>
+                        </div>
+                        <p className="run-artifacts">Artifacts: {run.output_dir}</p>
+                      </section>
+                    )}
                     {preview && (
                       <section className="preview-section">
                         <h3>Generated Robot Source</h3>
