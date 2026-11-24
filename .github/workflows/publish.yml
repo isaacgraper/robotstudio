@@ -3,6 +3,8 @@ name: Publish
 on:
   push:
     tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       target:
@@ -77,7 +79,7 @@ jobs:
 
   pypi:
     name: Publish to PyPI
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'pypi'
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
     needs: build
     runs-on: ubuntu-latest
     environment:
