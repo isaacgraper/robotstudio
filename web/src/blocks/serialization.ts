@@ -1,426 +1,522 @@
-import {
-  CanvasDocument,
-  TestCase,
-  KeywordDefinition,
-  CallStep,
-  IfStep,
-  ForStep,
-  WhileStep,
-  TryStep,
-  VarStep,
-  ReturnStep,
-  Step,
+/**
+ * Robotstudio - Visual Robot Framework Authoring Platform
+ * Workspace Serialization
+ *
+ * Converts between the canonical `CanvasDocument` and Blockly's workspace JSON
+ * (`Blockly.serialization.workspaces`). Blockly nests statements: a block's
+ * `inputs.X.block` is the first block of a statement input and `next.block`
+ * chains the blocks after it. IF/ELSE IF/ELSE and TRY/EXCEPT/ELSE/FINALLY are
+ * sibling blocks in that chain, grouped back together when reading.
+ *
+ * Lists typed into a single text field use fixed separators: commas for tags,
+ * assignment targets, EXCEPT patterns and FOR variables, and two spaces (Robot
+ * Framework's own cell separator) for FOR values, RETURN values and keyword
+ * arguments.
+ *
+ * @packageDocumentation
+ */
+
+import type {
   Argument,
-  KeywordRef,
-  LibraryImport,
+  CallStep,
+  CanvasDocument,
   ExceptClause,
+  ForStep,
+  IfStep,
+  KeywordDefinition,
+  LibraryImport,
+  Step,
+  TestCase,
+  TryStep,
+  WhileStep,
 } from "../types/canvas";
 
-interface BlocklyWorkspace {
-  blocks: Record<string, BlocklyBlock>;
+/** Blockly workspace state as produced by `serialization.workspaces.save`. */
+export interface BlocklyState {
+  blocks?: {
+    languageVersion?: number;
+    blocks?: BlocklyBlock[];
+  };
 }
 
-interface BlocklyBlock {
+/** One serialized Blockly block. */
+export interface BlocklyBlock {
   type: string;
-  id: string;
+  id?: string;
   x?: number;
   y?: number;
   fields?: Record<string, string | number | boolean>;
-  inputs?: Record<string, BlocklyInput>;
-  next?: BlocklyNext;
-  extraState?: Record<string, unknown>;
+  inputs?: Record<string, { block?: BlocklyBlock }>;
+  next?: { block?: BlocklyBlock };
+  data?: string;
 }
 
-interface BlocklyInput {
-  block?: BlocklyBlock;
+const CELL_SEPARATOR = "  ";
+/**
+ * Blockly's core has no multi-line text field, so line breaks inside a single
+ * text field are shown as this marker and restored when reading.
+ */
+const LINE_BREAK = " \u23ce ";
+const SCOPES = new Set(["TEST", "TASK", "SUITE", "GLOBAL"]);
+
+/** An empty document, used when nothing has been loaded yet. */
+export function emptyDocument(name = "Untitled"): CanvasDocument {
+  return {
+    version: 1,
+    name,
+    settings: {
+      documentation: "",
+      libraries: [],
+      resources: [],
+      variables: [],
+      suite_setup: null,
+      suite_teardown: null,
+      test_setup: null,
+      test_teardown: null,
+      force_tags: [],
+      default_tags: [],
+      test_timeout: null,
+      metadata: {},
+    },
+    tests: [],
+    keywords: [],
+  };
 }
 
-interface BlocklyNext {
-  block?: BlocklyBlock;
-}
+// ---------------------------------------------------------------------------
+// Reading helpers
+// ---------------------------------------------------------------------------
 
-const STEP_TYPE_MAP: Record<string, string> = {
-  robot_call: "call",
-  robot_if: "if",
-  robot_for: "for",
-  robot_while: "while",
-  robot_try: "try",
-  robot_var: "var",
-  robot_return: "return",
-  robot_break: "break",
-  robot_continue: "continue",
-  robot_comment: "comment",
-  robot_raw: "raw",
-};
-
-function getField(block: BlocklyBlock, name: string): string {
+function field(block: BlocklyBlock, name: string): string {
   return String(block.fields?.[name] ?? "");
 }
 
-function getInputBlock(block: BlocklyBlock, name: string): BlocklyBlock | undefined {
-  return block.inputs?.[name]?.block;
+function flag(block: BlocklyBlock, name: string): boolean {
+  const value = block.fields?.[name];
+  return value === true || value === "TRUE" || value === "true";
 }
 
-function getStatementBlocks(block: BlocklyBlock, name: string): BlocklyBlock[] {
-  const input = block.inputs?.[name];
-  if (!input?.block) return [];
+/** The block followed by everything chained after it with `next`. */
+function chain(first: BlocklyBlock | undefined): BlocklyBlock[] {
   const blocks: BlocklyBlock[] = [];
-  let current: BlocklyBlock | undefined = input.block;
-  while (current) {
+  for (let current = first; current; current = current.next?.block) {
     blocks.push(current);
-    current = current.next?.block;
   }
   return blocks;
 }
 
-function getValueBlocks(block: BlocklyBlock, name: string): BlocklyBlock[] {
-  const input = block.inputs?.[name];
-  if (!input?.block) return [];
-  const blocks: BlocklyBlock[] = [];
-  let current: BlocklyBlock | undefined = input.block;
-  while (current) {
-    blocks.push(current);
-    current = current.next?.block;
-  }
-  return blocks;
+function statements(block: BlocklyBlock, input: string): Step[] {
+  return parseSteps(chain(block.inputs?.[input]?.block));
 }
 
-function parseArguments(argBlocks: BlocklyBlock[]): Argument[] {
+function encodeLines(text: string): string {
+  return text.split("\n").join(LINE_BREAK);
+}
+
+function decodeLines(text: string): string {
+  return text.split(LINE_BREAK).join("\n");
+}
+
+function commaList(text: string): string[] {
+  return text.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function cellList(text: string): string[] {
+  return text.split(/\s{2,}|\t/).map((item) => item.trim()).filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// Workspace -> model
+// ---------------------------------------------------------------------------
+
+function parseArguments(first: BlocklyBlock | undefined): Argument[] {
   const args: Argument[] = [];
-  for (const argBlock of argBlocks) {
-    if (argBlock.type === "robot_argument") {
-      args.push({ name: getField(argBlock, "NAME") || null, value: getField(argBlock, "VALUE") || "" });
-    } else if (argBlock.type === "robot_positional_argument") {
-      args.push({ name: null, value: getField(argBlock, "VALUE") || "" });
+  for (const block of chain(first)) {
+    if (block.type === "robot_argument") {
+      args.push({ name: field(block, "NAME") || null, value: field(block, "VALUE") });
+    } else if (block.type === "robot_positional_argument") {
+      args.push({ name: null, value: field(block, "VALUE") });
     }
   }
   return args;
 }
 
-function parseAssign(assignBlocks: BlocklyBlock[]): string[] {
-  return assignBlocks.map((b) => getField(b, "NAME")).filter(Boolean);
-}
-
-function parseKeywordRef(callBlock: BlocklyBlock): KeywordRef {
-  const keywordName = getField(callBlock, "KEYWORD");
-  const embedded: Record<string, string> = {};
-  const matches = keywordName.match(/\$\{([^}]+)\}/g);
-  if (matches) {
-    for (const match of matches) {
-      const key = match.slice(2, -1);
-      embedded[key] = "";
-    }
-  }
-  return { name: keywordName, source: null, embedded };
-}
-
-function parseCallStep(block: BlocklyBlock): CallStep {
-  const keyword = parseKeywordRef(block);
-  const argBlocks = getStatementBlocks(block, "ARGS");
+function parseCall(block: BlocklyBlock): CallStep {
   return {
     type: "call",
-    keyword,
-    args: parseArguments(argBlocks),
-    assign: parseAssign(getValueBlocks(block, "ASSIGN")),
-    comment: null,
+    // The name field already holds the resolved keyword name, so nothing is left
+    // to substitute and `embedded` stays empty.
+    keyword: { name: field(block, "KEYWORD"), source: null, embedded: {} },
+    args: parseArguments(block.inputs?.ARGS?.block),
+    assign: commaList(field(block, "ASSIGN")),
+    comment: block.data || null,
   };
 }
 
-function parseIfStep(block: BlocklyBlock): IfStep {
-  const condition = getField(block, "CONDITION");
-  const thenBlocks = getStatementBlocks(block, "THEN");
-  const steps = thenBlocks.map(parseStep);
-  const extraState = block.extraState as { elseifCount?: number; hasElse?: boolean } | undefined;
-  const elseifCount = extraState?.elseifCount || 0;
-  const hasElse = extraState?.hasElse || false;
-
-  const branches: IfStep[] = [];
-  for (let i = 0; i < elseifCount; i++) {
-    const elseifCondition = getField(block, `ELSEIF_CONDITION_${i}`);
-    const elseifBlocks = getStatementBlocks(block, `ELSEIF_THEN_${i}`);
-    branches.push({
-      type: "if",
-      condition: elseifCondition,
-      steps: elseifBlocks.map(parseStep),
-      branches: [],
-      else_steps: [],
-    });
+function parseSteps(blocks: BlocklyBlock[]): Step[] {
+  const steps: Step[] = [];
+  let i = 0;
+  while (i < blocks.length) {
+    const block = blocks[i++];
+    switch (block.type) {
+      case "robot_call":
+        steps.push(parseCall(block));
+        break;
+      case "robot_if": {
+        const branches: IfStep[] = [];
+        while (blocks[i]?.type === "robot_elseif") {
+          const branch = blocks[i++];
+          branches.push({
+            type: "if",
+            condition: field(branch, "CONDITION"),
+            steps: statements(branch, "THEN"),
+            branches: [],
+            else_steps: [],
+          });
+        }
+        let elseSteps: Step[] = [];
+        if (blocks[i]?.type === "robot_else") {
+          elseSteps = statements(blocks[i++], "DO");
+        }
+        steps.push({
+          type: "if",
+          condition: field(block, "CONDITION"),
+          steps: statements(block, "THEN"),
+          branches,
+          else_steps: elseSteps,
+        });
+        break;
+      }
+      case "robot_for":
+        steps.push({
+          type: "for",
+          variables: field(block, "VAR").split(/[\s,]+/).filter(Boolean),
+          values: cellList(field(block, "VALUES")),
+          flavor: (field(block, "FLAVOR") || "in") as ForStep["flavor"],
+          steps: statements(block, "DO"),
+        });
+        break;
+      case "robot_while":
+        steps.push({
+          type: "while",
+          condition: field(block, "CONDITION"),
+          limit: field(block, "LIMIT") || null,
+          until: flag(block, "UNTIL"),
+          steps: statements(block, "DO"),
+        } satisfies WhileStep);
+        break;
+      case "robot_try": {
+        const excepts: ExceptClause[] = [];
+        while (blocks[i]?.type === "robot_except") {
+          const clause = blocks[i++];
+          excepts.push({
+            patterns: commaList(field(clause, "PATTERNS")),
+            variable: field(clause, "VAR").trim() || null,
+            steps: statements(clause, "DO"),
+          });
+        }
+        let elseSteps: Step[] = [];
+        if (blocks[i]?.type === "robot_try_else") {
+          elseSteps = statements(blocks[i++], "DO");
+        }
+        let finallySteps: Step[] = [];
+        if (blocks[i]?.type === "robot_finally") {
+          finallySteps = statements(blocks[i++], "DO");
+        }
+        steps.push({
+          type: "try",
+          steps: statements(block, "DO"),
+          excepts,
+          else_steps: elseSteps,
+          finally_steps: finallySteps,
+        } satisfies TryStep);
+        break;
+      }
+      case "robot_var":
+        steps.push({
+          type: "var",
+          name: field(block, "NAME"),
+          value: field(block, "VALUE"),
+          scope: field(block, "SCOPE") || null,
+        });
+        break;
+      case "robot_return":
+        steps.push({ type: "return", values: cellList(field(block, "VALUES")) });
+        break;
+      case "robot_break":
+        steps.push({ type: "break" });
+        break;
+      case "robot_continue":
+        steps.push({ type: "continue" });
+        break;
+      case "robot_comment":
+        steps.push({ type: "comment", text: field(block, "TEXT") });
+        break;
+      case "robot_raw":
+        steps.push({ type: "raw", lines: field(block, "LINES").split(LINE_BREAK) });
+        break;
+      default:
+        // A branch block with no block to attach to, or a block this editor does
+        // not know. Dropping it silently would lose work, so keep it as a comment.
+        steps.push({ type: "comment", text: `Unsupported block: ${block.type}` });
+    }
   }
-
-  const elseSteps = hasElse ? getStatementBlocks(block, "ELSE").map(parseStep) : [];
-
-  return { type: "if", condition, steps, branches, else_steps: elseSteps };
+  return steps;
 }
 
-function parseForStep(block: BlocklyBlock): ForStep {
-  const variables = [getField(block, "VAR")].filter(Boolean);
-  const flavor = getField(block, "FLAVOR");
-  const valueBlocks = getValueBlocks(block, "VALUES");
-  const values = valueBlocks.map((b) => getField(b, "VALUE") || getField(b, "NAME") || "");
-  const steps = getStatementBlocks(block, "DO").map(parseStep);
-  return { type: "for", variables, values, flavor: flavor as ForStep["flavor"], steps };
+function parseSingleCall(block: BlocklyBlock | undefined): CallStep | null {
+  return block?.type === "robot_call" ? parseCall(block) : null;
 }
 
-function parseWhileStep(block: BlocklyBlock): WhileStep {
-  const condition = getField(block, "CONDITION");
-  const limit = getField(block, "LIMIT");
-  const until = getField(block, "UNTIL") === "true";
-  const steps = getStatementBlocks(block, "DO").map(parseStep);
-  return { type: "while", condition, limit: limit || null, until, steps };
-}
-
-function parseTryStep(block: BlocklyBlock): TryStep {
-  const tryBlocks = getStatementBlocks(block, "TRY");
-  const steps = tryBlocks.map(parseStep);
-  const extraState = block.extraState as { exceptCount?: number; hasElse?: boolean; hasFinally?: boolean } | undefined;
-  const exceptCount = extraState?.exceptCount || 1;
-  const hasElse = extraState?.hasElse || false;
-  const hasFinally = extraState?.hasFinally || false;
-
-  const excepts: ExceptClause[] = [];
-  for (let i = 0; i < exceptCount; i++) {
-    const patterns = getField(block, `EXCEPT_PATTERNS_${i}`).split(",").map((p) => p.trim()).filter(Boolean);
-    const variable = getField(block, `EXCEPT_VAR_FIELD_${i}`) || getField(block, `EXCEPT_VAR_${i}`) || "error";
-    const exceptBlocks = getStatementBlocks(block, `EXCEPT_DO_${i}`);
-    excepts.push({ patterns, variable: variable || null, steps: exceptBlocks.map(parseStep) });
-  }
-
-  const elseSteps = hasElse ? getStatementBlocks(block, "ELSE").map(parseStep) : [];
-  const finallySteps = hasFinally ? getStatementBlocks(block, "FINALLY").map(parseStep) : [];
-
-  return { type: "try", steps, excepts, else_steps: elseSteps, finally_steps: finallySteps };
-}
-
-function parseVarStep(block: BlocklyBlock): VarStep {
+function parseTest(block: BlocklyBlock, base: CanvasDocument): TestCase {
+  const name = field(block, "NAME");
   return {
-    type: "var",
-    name: getField(block, "NAME"),
-    value: getField(block, "VALUE"),
-    scope: getField(block, "SCOPE") || null,
-  };
-}
-
-function parseReturnStep(block: BlocklyBlock): ReturnStep {
-  const valueBlocks = getStatementBlocks(block, "VALUES");
-  return { type: "return", values: valueBlocks.map((b) => getField(b, "VALUE") || getField(b, "NAME") || "") };
-}
-
-function parseStep(block: BlocklyBlock): Step {
-  const stepType = STEP_TYPE_MAP[block.type];
-  switch (stepType) {
-    case "call":
-      return parseCallStep(block);
-    case "if":
-      return parseIfStep(block);
-    case "for":
-      return parseForStep(block);
-    case "while":
-      return parseWhileStep(block);
-    case "try":
-      return parseTryStep(block);
-    case "var":
-      return parseVarStep(block);
-    case "return":
-      return parseReturnStep(block);
-    case "break":
-      return { type: "break" };
-    case "continue":
-      return { type: "continue" };
-    case "comment":
-      return { type: "comment", text: getField(block, "TEXT") };
-    case "raw":
-      return { type: "raw", lines: getField(block, "LINES").split("\n") };
-    default:
-      return { type: "raw", lines: [`# Unknown block: ${block.type}`] };
-  }
-}
-
-function parseTestCase(block: BlocklyBlock): TestCase {
-  const name = getField(block, "NAME");
-  const steps = getStatementBlocks(block, "STEPS").map(parseStep);
-  return {
-    id: "",
+    id: base.tests.find((test) => test.name === name)?.id ?? "",
     name,
-    documentation: getField(block, "DOC"),
-    tags: getField(block, "TAGS").split(",").map((t) => t.trim()).filter(Boolean),
-    setup: getInputBlock(block, "SETUP") ? parseCallStep(getInputBlock(block, "SETUP")!) : null,
-    teardown: getInputBlock(block, "TEARDOWN") ? parseCallStep(getInputBlock(block, "TEARDOWN")!) : null,
-    timeout: getField(block, "TIMEOUT") || null,
-    template: getField(block, "TEMPLATE") || null,
-    steps,
+    documentation: decodeLines(field(block, "DOC")),
+    tags: commaList(field(block, "TAGS")),
+    setup: parseSingleCall(block.inputs?.SETUP?.block),
+    teardown: parseSingleCall(block.inputs?.TEARDOWN?.block),
+    timeout: field(block, "TIMEOUT") || null,
+    template: field(block, "TEMPLATE") || null,
+    steps: statements(block, "STEPS"),
   };
 }
 
-function parseKeywordDef(block: BlocklyBlock): KeywordDefinition {
-  const name = getField(block, "NAME");
-  const args = getField(block, "ARGS").split(",").map((a) => a.trim()).filter(Boolean);
-  const steps = getStatementBlocks(block, "STEPS").map(parseStep);
+function parseKeyword(block: BlocklyBlock): KeywordDefinition {
   return {
-    name,
-    arguments: args,
-    documentation: getField(block, "DOC"),
-    tags: getField(block, "TAGS").split(",").map((t) => t.trim()).filter(Boolean),
-    teardown: getInputBlock(block, "TEARDOWN") ? parseCallStep(getInputBlock(block, "TEARDOWN")!) : null,
-    steps,
+    name: field(block, "NAME"),
+    arguments: cellList(field(block, "ARGS")),
+    documentation: decodeLines(field(block, "DOC")),
+    tags: commaList(field(block, "TAGS")),
+    teardown: parseSingleCall(block.inputs?.TEARDOWN?.block),
+    steps: statements(block, "STEPS"),
   };
 }
 
-export function workspaceToModel(workspace: BlocklyWorkspace, name: string): CanvasDocument {
-  const topBlocks = Object.values(workspace.blocks).filter((b) => !b.next && !b.inputs?.STACK?.block?.next);
+/**
+ * Builds a document from a Blockly workspace.
+ *
+ * Only tests, keywords and library imports live on the canvas. Every other
+ * suite setting (documentation, resources, variables, suite setup and teardown,
+ * tags, timeout, metadata) is carried over from `base` unchanged, so editing
+ * blocks never discards it.
+ */
+export function workspaceToModel(state: BlocklyState, base: CanvasDocument): CanvasDocument {
   const tests: TestCase[] = [];
   const keywords: KeywordDefinition[] = [];
   const libraries: LibraryImport[] = [];
 
-  for (const block of topBlocks) {
-    if (block.type === "robot_test") {
-      tests.push(parseTestCase(block));
-    } else if (block.type === "robot_keyword") {
-      keywords.push(parseKeywordDef(block));
-    } else if (block.type === "robot_library") {
-      libraries.push({ name: getField(block, "NAME"), alias: getField(block, "ALIAS") || null, args: [] });
+  for (const top of state.blocks?.blocks ?? []) {
+    for (const block of chain(top)) {
+      if (block.type === "robot_test") {
+        tests.push(parseTest(block, base));
+      } else if (block.type === "robot_keyword") {
+        keywords.push(parseKeyword(block));
+      } else if (block.type === "robot_library") {
+        const name = field(block, "NAME");
+        const alias = field(block, "ALIAS") || null;
+        const known = base.settings.libraries.find((lib) => lib.name === name && lib.alias === alias);
+        libraries.push({ name, alias, args: known?.args ?? [] });
+      }
     }
   }
 
-  return {
-    version: 1,
-    name,
-    settings: { documentation: "", libraries, resources: [], variables: [], suite_setup: null, suite_teardown: null, test_setup: null, test_teardown: null, force_tags: [], default_tags: [], test_timeout: null, metadata: {} },
-    tests,
-    keywords,
-  };
+  return { ...base, settings: { ...base.settings, libraries }, tests, keywords };
 }
 
-function buildCallStep(step: CallStep, idPrefix: string): BlocklyBlock {
-  const keywordName = step.keyword.embedded && Object.keys(step.keyword.embedded).length > 0
-    ? Object.entries(step.keyword.embedded).reduce((name, [key, value]) => name.replace(`\${${key}}`, value), step.keyword.name)
-    : step.keyword.name;
-  const blocks: BlocklyBlock[] = [];
-  let lastId = `${idPrefix}_call`;
+// ---------------------------------------------------------------------------
+// Model -> workspace
+// ---------------------------------------------------------------------------
 
-  blocks.push({
-    type: "robot_call",
-    id: lastId,
-    fields: { KEYWORD: keywordName },
-    extraState: { argCount: step.args.length },
-  });
-
-  for (let i = 0; i < step.args.length; i++) {
-    const arg = step.args[i];
-    const argId = `${idPrefix}_arg_${i}`;
-    blocks.push({
-      type: arg.name ? "robot_argument" : "robot_positional_argument",
-      id: argId,
-      fields: { NAME: arg.name || "", VALUE: arg.value },
-      next: i < step.args.length - 1 ? { block: { id: `${idPrefix}_arg_${i + 1}`, type: "" } } : undefined,
-    });
+/** Nests blocks through `next`, returning the first one. */
+function link(blocks: BlocklyBlock[]): BlocklyBlock | undefined {
+  for (let i = blocks.length - 2; i >= 0; i--) {
+    blocks[i].next = { block: blocks[i + 1] };
   }
-
   return blocks[0];
 }
 
-function buildStep(step: Step, idPrefix: string): BlocklyBlock {
+function input(blocks: BlocklyBlock[]): { block: BlocklyBlock } | undefined {
+  const first = link(blocks);
+  return first ? { block: first } : undefined;
+}
+
+function inputs(entries: Record<string, BlocklyBlock[]>): BlocklyBlock["inputs"] {
+  const result: NonNullable<BlocklyBlock["inputs"]> = {};
+  for (const [name, blocks] of Object.entries(entries)) {
+    const value = input(blocks);
+    if (value) result[name] = value;
+  }
+  return result;
+}
+
+function resolveKeywordName(step: CallStep): string {
+  let name = step.keyword.name;
+  for (const [key, value] of Object.entries(step.keyword.embedded ?? {})) {
+    name = name.split("${" + key + "}").join(value);
+  }
+  return name;
+}
+
+function buildCall(step: CallStep): BlocklyBlock {
+  const args = step.args.map((arg): BlocklyBlock =>
+    arg.name
+      ? { type: "robot_argument", fields: { NAME: arg.name, VALUE: arg.value } }
+      : { type: "robot_positional_argument", fields: { VALUE: arg.value } }
+  );
+  return {
+    type: "robot_call",
+    fields: { ASSIGN: step.assign.join(", "), KEYWORD: resolveKeywordName(step) },
+    inputs: inputs({ ARGS: args }),
+    ...(step.comment ? { data: step.comment } : {}),
+  };
+}
+
+/** One model step becomes one block, or several for IF and TRY branches. */
+function buildStep(step: Step): BlocklyBlock[] {
   switch (step.type) {
     case "call":
-      return buildCallStep(step, idPrefix);
+      return [buildCall(step)];
     case "if": {
-      const ifId = `${idPrefix}_if`;
-      const blocks: BlocklyBlock[] = [];
-      blocks.push({
-        type: "robot_if",
-        id: ifId,
-        fields: { CONDITION: step.condition },
-        extraState: { elseifCount: step.branches.length, hasElse: step.else_steps.length > 0 },
-      });
-      step.steps.forEach((s, i) => {
-        buildStep(s, `${idPrefix}_then_${i}`);
-      });
-      return blocks[0];
+      const blocks: BlocklyBlock[] = [
+        {
+          type: "robot_if",
+          fields: { CONDITION: step.condition },
+          inputs: inputs({ THEN: buildSteps(step.steps) }),
+        },
+      ];
+      for (const branch of step.branches) {
+        blocks.push({
+          type: "robot_elseif",
+          fields: { CONDITION: branch.condition },
+          inputs: inputs({ THEN: buildSteps(branch.steps) }),
+        });
+      }
+      if (step.else_steps.length > 0) {
+        blocks.push({ type: "robot_else", inputs: inputs({ DO: buildSteps(step.else_steps) }) });
+      }
+      return blocks;
     }
-    case "for": {
-      const forId = `${idPrefix}_for`;
-      return {
-        type: "robot_for",
-        id: forId,
-        fields: { VAR: step.variables[0] || "item", FLAVOR: step.flavor },
-        inputs: { VALUES: { block: { type: "robot_text", id: `${idPrefix}_values`, fields: { TEXT: step.values.join(" ") } } } },
-      };
-    }
-    case "while": {
-      const whileId = `${idPrefix}_while`;
-      return {
-        type: "robot_while",
-        id: whileId,
-        fields: { CONDITION: step.condition, LIMIT: step.limit || "", UNTIL: step.until },
-      };
-    }
+    case "for":
+      return [
+        {
+          type: "robot_for",
+          fields: {
+            VAR: step.variables.join(", "),
+            FLAVOR: step.flavor,
+            VALUES: step.values.join(CELL_SEPARATOR),
+          },
+          inputs: inputs({ DO: buildSteps(step.steps) }),
+        },
+      ];
+    case "while":
+      return [
+        {
+          type: "robot_while",
+          fields: { CONDITION: step.condition, LIMIT: step.limit ?? "", UNTIL: step.until },
+          inputs: inputs({ DO: buildSteps(step.steps) }),
+        },
+      ];
     case "try": {
-      const tryId = `${idPrefix}_try`;
-      return {
-        type: "robot_try",
-        id: tryId,
-        extraState: { exceptCount: step.excepts.length, hasElse: step.else_steps.length > 0, hasFinally: step.finally_steps.length > 0 },
-      };
+      const blocks: BlocklyBlock[] = [
+        { type: "robot_try", inputs: inputs({ DO: buildSteps(step.steps) }) },
+      ];
+      for (const clause of step.excepts) {
+        blocks.push({
+          type: "robot_except",
+          fields: { PATTERNS: clause.patterns.join(", "), VAR: clause.variable ?? "" },
+          inputs: inputs({ DO: buildSteps(clause.steps) }),
+        });
+      }
+      if (step.else_steps.length > 0) {
+        blocks.push({ type: "robot_try_else", inputs: inputs({ DO: buildSteps(step.else_steps) }) });
+      }
+      if (step.finally_steps.length > 0) {
+        blocks.push({ type: "robot_finally", inputs: inputs({ DO: buildSteps(step.finally_steps) }) });
+      }
+      return blocks;
     }
     case "var": {
-      return {
-        type: "robot_var",
-        id: `${idPrefix}_var`,
-        fields: { NAME: step.name, VALUE: step.value, SCOPE: step.scope || "TEST" },
-      };
+      const scope = (step.scope ?? "").toUpperCase();
+      return [
+        {
+          type: "robot_var",
+          fields: { NAME: step.name, VALUE: step.value, SCOPE: SCOPES.has(scope) ? scope : "" },
+        },
+      ];
     }
-    case "return": {
-      return {
-        type: "robot_return",
-        id: `${idPrefix}_return`,
-      };
-    }
+    case "return":
+      return [{ type: "robot_return", fields: { VALUES: step.values.join(CELL_SEPARATOR) } }];
     case "break":
-      return { type: "robot_break", id: `${idPrefix}_break` };
+      return [{ type: "robot_break" }];
     case "continue":
-      return { type: "robot_continue", id: `${idPrefix}_continue` };
+      return [{ type: "robot_continue" }];
     case "comment":
-      return { type: "robot_comment", id: `${idPrefix}_comment`, fields: { TEXT: step.text } };
+      return [{ type: "robot_comment", fields: { TEXT: step.text } }];
     case "raw":
-      return { type: "robot_raw", id: `${idPrefix}_raw`, fields: { LINES: step.lines.join("\n") } };
+      return [{ type: "robot_raw", fields: { LINES: step.lines.join(LINE_BREAK) } }];
   }
 }
 
-export function modelToWorkspace(document: CanvasDocument): BlocklyWorkspace {
-  const blocks: Record<string, BlocklyBlock> = {};
-  let idCounter = 0;
-  const nextId = (prefix: string) => `${prefix}_${idCounter++}`;
+function buildSteps(steps: Step[]): BlocklyBlock[] {
+  return steps.flatMap(buildStep);
+}
 
-  if (document.settings.libraries.length > 0) {
-    document.settings.libraries.forEach((lib) => {
-      blocks[nextId("lib")] = {
-        type: "robot_library",
-        id: nextId("lib"),
-        fields: { NAME: lib.name, ALIAS: lib.alias || "" },
-      };
+/**
+ * Builds Blockly workspace state from a document.
+ *
+ * Library imports form one stack; each test and keyword is its own top-level
+ * block. Positions are left to `Workspace.cleanUp()`.
+ */
+export function modelToWorkspace(document: CanvasDocument): BlocklyState {
+  const top: BlocklyBlock[] = [];
+
+  const libraries = link(
+    document.settings.libraries.map<BlocklyBlock>((lib) => ({
+      type: "robot_library",
+      fields: { NAME: lib.name, ALIAS: lib.alias ?? "" },
+    }))
+  );
+  if (libraries) top.push({ ...libraries, x: 20, y: 20 });
+
+  for (const test of document.tests) {
+    top.push({
+      type: "robot_test",
+      x: 20,
+      y: 20,
+      fields: {
+        NAME: test.name,
+        DOC: encodeLines(test.documentation),
+        TAGS: test.tags.join(", "),
+        TIMEOUT: test.timeout ?? "",
+        TEMPLATE: test.template ?? "",
+      },
+      inputs: inputs({
+        SETUP: test.setup ? [buildCall(test.setup)] : [],
+        TEARDOWN: test.teardown ? [buildCall(test.teardown)] : [],
+        STEPS: buildSteps(test.steps),
+      }),
     });
   }
 
-  document.tests.forEach((test) => {
-    const testId = nextId("test");
-    const stepBlocks = test.steps.map((step, i) => buildStep(step, `${testId}_step_${i}`));
-    blocks[testId] = {
-      type: "robot_test",
-      id: testId,
-      fields: { NAME: test.name, DOC: test.documentation, TAGS: test.tags.join(", "), TIMEOUT: test.timeout || "", TEMPLATE: test.template || "" },
-      inputs: { STEPS: { block: stepBlocks[0] } },
-    };
-  });
-
-  document.keywords.forEach((kw) => {
-    const kwId = nextId("kw");
-    const stepBlocks = kw.steps.map((step, i) => buildStep(step, `${kwId}_step_${i}`));
-    blocks[kwId] = {
+  for (const keyword of document.keywords) {
+    top.push({
       type: "robot_keyword",
-      id: kwId,
-      fields: { NAME: kw.name, ARGS: kw.arguments.join(", "), DOC: kw.documentation, TAGS: kw.tags.join(", ") },
-      inputs: { STEPS: { block: stepBlocks[0] } },
-    };
-  });
+      x: 20,
+      y: 20,
+      fields: {
+        NAME: keyword.name,
+        ARGS: keyword.arguments.join(CELL_SEPARATOR),
+        DOC: encodeLines(keyword.documentation),
+        TAGS: keyword.tags.join(", "),
+      },
+      inputs: inputs({
+        TEARDOWN: keyword.teardown ? [buildCall(keyword.teardown)] : [],
+        STEPS: buildSteps(keyword.steps),
+      }),
+    });
+  }
 
-  return { blocks };
+  return { blocks: { languageVersion: 0, blocks: top } };
 }

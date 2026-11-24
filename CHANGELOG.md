@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Web editor**: selecting a suite no longer crashes the page. Blocks load and save
+  in Blockly's own workspace format, edits round-trip to identical Robot source, and
+  suite settings the canvas does not edit are kept on save.
+- **Web editor**: keyword names are free text, so user keywords can be called, and
+  documentation and raw lines are no longer dropped (Blockly core has no multi-line field).
+- **Web editor**: IF/ELSE IF/ELSE and TRY/EXCEPT/ELSE/FINALLY are sibling blocks instead of
+  mutators; call arguments are stacked argument blocks.
+- **Web UI**: switching suites shows the selected suite, and Validate and Dry Run show their
+  result after a Preview.
+
 ## [0.1.0] - 2026-11-24
 
 ### Added

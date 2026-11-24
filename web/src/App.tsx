@@ -77,10 +77,15 @@ function App() {
   }, [loadInitial]);
 
   const handleSuiteSelect = async (suite: SuiteEntry) => {
-    setCurrentSuite(suite);
     try {
       const data = await fetchSuite(suite.stem);
+      // Set both together: the editor reloads when the suite key changes and must
+      // see the matching document, not the previous suite's.
+      setCurrentSuite(suite);
       setDocument(data.document);
+      setPreview(null);
+      setValidation(null);
+      setRun(null);
     } catch (e) {
       setError("Failed to load suite");
       console.error(e);
@@ -150,6 +155,7 @@ function App() {
     if (!document) return;
     try {
       const result = await previewDocument(document);
+      setValidation(null);
       setPreview(result);
     } catch (e) {
       setError("Preview failed");
@@ -161,6 +167,7 @@ function App() {
     if (!document) return;
     try {
       const result = await validateDocument(document, dryRun);
+      setPreview(null);
       setValidation(result.validation);
     } catch (e) {
       setError("Validation failed");
