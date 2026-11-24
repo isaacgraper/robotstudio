@@ -194,6 +194,8 @@ class SuiteSettings(BaseModel):
 class TestCase(BaseModel):
     """A test case in ``*** Test Cases ***``."""
 
+    __test__ = False
+
     id: str = ""
     name: str
     documentation: str = ""
