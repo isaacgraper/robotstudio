@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--reload", action="store_true")
+    serve.add_argument("--no-run", action="store_true", help="Disable suite execution.")
 
     init = commands.add_parser("init", help="Create a workspace with a demo suite.")
     init.add_argument(
@@ -99,6 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("ROBOTSTUDIO_WORKSPACE", "workspace"),
         help="Directory holding canvas documents and suites.",
     )
+    mcp_command.add_argument(
+        "--no-run", action="store_true", help="Disable suite execution."
+    )
     return parser
 
 
@@ -133,9 +137,13 @@ def main(argv: list[str] | None = None) -> int:
 def _serve(arguments: argparse.Namespace) -> int:
     import uvicorn
 
+    from robotstudio.api.app import create_app
+
     os.environ["ROBOTSTUDIO_WORKSPACE"] = str(Path(arguments.workspace))
+    allow_run = not arguments.no_run
     print(f"Robotstudio {__version__} on http://{arguments.host}:{arguments.port}")
     print(f"Workspace: {Path(arguments.workspace).resolve()}")
+    print(f"Run enabled: {allow_run}")
     if arguments.reload:
         uvicorn.run(
             "robotstudio.api.app:create_app",
@@ -145,10 +153,8 @@ def _serve(arguments: argparse.Namespace) -> int:
             reload=True,
         )
     else:
-        from robotstudio.api.app import create_app
-
         uvicorn.run(
-            create_app(arguments.workspace),
+            create_app(arguments.workspace, allow_run=allow_run),
             host=arguments.host,
             port=arguments.port,
         )
@@ -261,7 +267,9 @@ def _mcp(arguments: argparse.Namespace) -> int:
         return 2
     print(f"Robotstudio MCP {__version__}", file=sys.stderr)
     print(f"Workspace: {Path(arguments.workspace).resolve()}", file=sys.stderr)
-    run_mcp(arguments.workspace)
+    allow_run = not arguments.no_run
+    print(f"Run enabled: {allow_run}", file=sys.stderr)
+    run_mcp(arguments.workspace, allow_run=allow_run)
     return 0
 
 

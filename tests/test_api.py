@@ -78,3 +78,25 @@ def test_delete_suite(client: TestClient) -> None:
     client.post("/api/init")
     assert client.delete("/api/suites/robotstudio-demo").json() == {"deleted": True}
     assert client.get("/api/suites").json() == []
+
+
+def test_run_disabled_returns_403(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path, allow_run=False))
+    client.post("/api/init")
+    resp = client.post("/api/suites/robotstudio-demo/run")
+    assert resp.status_code == 403
+    assert "disabled" in resp.json()["detail"].lower()
+
+    # health still reports allow_run
+    health = client.get("/api/health").json()
+    assert health["allow_run"] is False
+
+
+def test_run_enabled_by_default(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path))
+    client.post("/api/init")
+    resp = client.post("/api/suites/robotstudio-demo/run")
+    assert resp.status_code == 200
+
+    health = client.get("/api/health").json()
+    assert health["allow_run"] is True

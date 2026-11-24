@@ -21,6 +21,7 @@ from robotstudio.runner import (
     load_run,
     run_suite,
 )
+from robotstudio.settings import allow_run_from_env
 from robotstudio.workspace.import_robot import import_robot_file
 from robotstudio.workspace.store import Workspace
 
@@ -46,18 +47,29 @@ def _suite_summary(entry: Any) -> dict[str, Any]:
     }
 
 
-def create_server() -> FastMCP:
-    """Build the MCP server with every Robotstudio tool registered."""
-    mcp = FastMCP(
-        "robotstudio",
-        instructions=(
-            "Robotstudio is a visual authoring and execution platform for Robot "
-            "Framework. Use these tools to inspect the keyword catalog, create and "
-            "edit canvas suites, generate and validate Robot source, run suites, "
-            "and export results. Always search the catalog before inventing a "
-            "keyword name."
-        ),
+def create_server(allow_run: bool | None = None) -> FastMCP:
+    """Build the MCP server with every Robotstudio tool registered.
+
+    ``allow_run`` defaults to the ``ROBOTSTUDIO_ALLOW_RUN`` environment switch.
+    When execution is disabled, ``studio_run_suite`` is not registered at all.
+    """
+    run_enabled = allow_run_from_env() if allow_run is None else allow_run
+    instructions = (
+        "Robotstudio is a visual authoring and execution platform for Robot "
+        "Framework. Use these tools to inspect the keyword catalog, create and "
+        "edit canvas suites, generate and validate Robot source, run suites, "
+        "and export results. Always search the catalog before inventing a "
+        "keyword name."
     )
+    if not run_enabled:
+        instructions = (
+            "Robotstudio is a visual authoring platform for Robot Framework. Use "
+            "these tools to inspect the keyword catalog, create and edit canvas "
+            "suites, generate and validate Robot source, and export existing "
+            "results. Suite execution is disabled in this deployment. Always "
+            "search the catalog before inventing a keyword name."
+        )
+    mcp = FastMCP("robotstudio", instructions=instructions)
 
     # -- workspace ---------------------------------------------------------
     @mcp.tool()
@@ -249,20 +261,22 @@ def create_server() -> FastMCP:
         }
 
     # -- execution ---------------------------------------------------------
-    @mcp.tool()
-    def studio_run_suite(stem: str, timeout: float = 600.0) -> dict[str, Any]:
-        """Execute a stored suite and return per-test results.
+    if run_enabled:
 
-        Only one run can happen at a time. Output is written under
-        ``<workspace>/.runs/<run_id>``.
-        """
-        try:
-            summary = run_suite(_workspace(), stem, timeout=timeout)
-        except RunBusyError as error:
-            raise ValueError(f"Run already in progress: {error}") from error
-        except RunError as error:
-            raise ValueError(str(error)) from error
-        return summary.model_dump(mode="json")
+        @mcp.tool()
+        def studio_run_suite(stem: str, timeout: float = 600.0) -> dict[str, Any]:
+            """Execute a stored suite and return per-test results.
+
+            Only one run can happen at a time. Output is written under
+            ``<workspace>/.runs/<run_id>``.
+            """
+            try:
+                summary = run_suite(_workspace(), stem, timeout=timeout)
+            except RunBusyError as error:
+                raise ValueError(f"Run already in progress: {error}") from error
+            except RunError as error:
+                raise ValueError(str(error)) from error
+            return summary.model_dump(mode="json")
 
     @mcp.tool()
     def studio_list_runs(limit: int = 20) -> dict[str, Any]:
@@ -332,9 +346,7 @@ def create_server() -> FastMCP:
     @mcp.prompt()
     def author_suite(goal: str) -> str:
         """Draft a plan for authoring a Robot Framework suite."""
-        return (
-            "You are authoring a Robot Framework suite inside Robotstudio.\n\n"
-            f"Goal: {goal}\n\n"
+        steps = (
             "Work in this order:\n"
             "1. Call studio_search_keywords for each capability the suite needs and "
             "studio_describe_keyword on the best candidates.\n"
@@ -342,7 +354,15 @@ def create_server() -> FastMCP:
             "tests with steps, and keywords for shared logic.\n"
             "3. Call studio_preview, then studio_validate with dry_run_check=true.\n"
             "4. Fix every error, then studio_save_suite.\n"
-            "5. Call studio_run_suite and report the results.\n"
+        )
+        if run_enabled:
+            steps += "5. Call studio_run_suite and report the results.\n"
+        else:
+            steps += "5. Report the saved suite; execution is disabled here.\n"
+        return (
+            "You are authoring a Robot Framework suite inside Robotstudio.\n\n"
+            f"Goal: {goal}\n\n"
+            f"{steps}"
         )
 
     @mcp.prompt()
@@ -375,13 +395,13 @@ def _validation_payload(result: Any) -> dict[str, Any]:
     }
 
 
-def main(workspace: str | None = None) -> None:
+def main(workspace: str | None = None, allow_run: bool | None = None) -> None:
     """Run the MCP server over stdio."""
     if workspace:
         os.environ["ROBOTSTUDIO_WORKSPACE"] = str(
             Path(workspace).expanduser().resolve()
         )
-    server = create_server()
+    server = create_server(allow_run=allow_run)
     server.run(transport="stdio")
 
 
