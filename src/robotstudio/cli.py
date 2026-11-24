@@ -11,6 +11,7 @@ from robotstudio import __version__
 from robotstudio.generator.validation import dry_run, parse_source
 from robotstudio.keywords.catalog import load_catalog
 from robotstudio.model.canvas import CanvasDocument
+from robotstudio.runner import RunError, export_run, list_runs, run_suite
 from robotstudio.workspace.demo import demo_document
 from robotstudio.workspace.store import Workspace, WorkspaceError
 
@@ -57,6 +58,47 @@ def build_parser() -> argparse.ArgumentParser:
     catalog = commands.add_parser("catalog", help="Print the keyword catalog.")
     catalog.add_argument("--library", action="append", default=[])
     catalog.add_argument("--curated", action="store_true")
+
+    run = commands.add_parser("run", help="Execute a stored suite.")
+    run.add_argument("stem", help="Suite file stem.")
+    run.add_argument(
+        "--workspace",
+        default=os.environ.get("ROBOTSTUDIO_WORKSPACE", "workspace"),
+    )
+    run.add_argument("--timeout", type=float, default=600.0)
+
+    runs = commands.add_parser("runs", help="List recorded runs.")
+    runs.add_argument(
+        "--workspace",
+        default=os.environ.get("ROBOTSTUDIO_WORKSPACE", "workspace"),
+    )
+
+    export = commands.add_parser("export", help="Export a recorded run.")
+    export.add_argument("run_id")
+    export.add_argument(
+        "format",
+        choices=["junit", "results-csv", "cases-csv", "results-json", "bundle"],
+    )
+    export.add_argument(
+        "--workspace",
+        default=os.environ.get("ROBOTSTUDIO_WORKSPACE", "workspace"),
+    )
+    export.add_argument("--out", type=Path, default=None)
+    export.add_argument(
+        "--redact",
+        action="append",
+        default=[],
+        help="Extra regular expression to redact from text artifacts.",
+    )
+
+    mcp_command = commands.add_parser(
+        "mcp", help="Run the Model Context Protocol server on stdio."
+    )
+    mcp_command.add_argument(
+        "--workspace",
+        default=os.environ.get("ROBOTSTUDIO_WORKSPACE", "workspace"),
+        help="Directory holding canvas documents and suites.",
+    )
     return parser
 
 
@@ -74,7 +116,15 @@ def main(argv: list[str] | None = None) -> int:
             return _validate(arguments)
         if arguments.command == "catalog":
             return _catalog(arguments)
-    except WorkspaceError as error:
+        if arguments.command == "run":
+            return _run(arguments)
+        if arguments.command == "runs":
+            return _runs(arguments)
+        if arguments.command == "export":
+            return _export(arguments)
+        if arguments.command == "mcp":
+            return _mcp(arguments)
+    except (WorkspaceError, RunError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return 1
@@ -147,6 +197,72 @@ def _validate(arguments: argparse.Namespace) -> int:
     for message in result.messages:
         print(f"  {message.level}: {message.message}")
     return 0 if result.ok else 1
+
+
+def _run(arguments: argparse.Namespace) -> int:
+    workspace = Workspace(arguments.workspace)
+    summary = run_suite(workspace, arguments.stem, timeout=arguments.timeout)
+    print(f"Run: {summary.run_id}")
+    print(f"Status: {summary.status}")
+    print(
+        f"Tests: {summary.total} "
+        f"({summary.passed} passed, {summary.failed} failed, "
+        f"{summary.skipped} skipped) in {summary.duration_ms} ms"
+    )
+    for case in summary.cases:
+        if case.status.upper() != "PASS":
+            print(f"  {case.status}: {case.suite}.{case.name}: {case.message}")
+    if summary.error:
+        print(f"  error: {summary.error}", file=sys.stderr)
+    print(f"Artifacts: {summary.output_dir}")
+    return 0 if summary.status == "passed" else 1
+
+
+def _runs(arguments: argparse.Namespace) -> int:
+    workspace = Workspace(arguments.workspace)
+    summaries = list_runs(workspace)
+    if not summaries:
+        print("No runs recorded yet.")
+        return 0
+    for summary in summaries:
+        print(
+            f"{summary.run_id}  {summary.stem:<24} {summary.status:<8} "
+            f"{summary.passed}/{summary.total} passed"
+        )
+    return 0
+
+
+def _export(arguments: argparse.Namespace) -> int:
+    workspace = Workspace(arguments.workspace)
+    path, _ = export_run(
+        workspace,
+        arguments.run_id,
+        arguments.format,
+        redact_patterns=tuple(arguments.redact),
+    )
+    if arguments.out:
+        arguments.out.parent.mkdir(parents=True, exist_ok=True)
+        arguments.out.write_bytes(path.read_bytes())
+        path = arguments.out
+    print(f"Wrote {path}")
+    return 0
+
+
+def _mcp(arguments: argparse.Namespace) -> int:
+    try:
+        from robotstudio.mcp.server import main as run_mcp
+    except ImportError as error:  # pragma: no cover - depends on optional extra
+        print(
+            "error: the MCP server needs the optional 'mcp' extra.\n"
+            "Install it with: pip install 'robotstudio[mcp]'",
+            file=sys.stderr,
+        )
+        print(f"  ({error})", file=sys.stderr)
+        return 2
+    print(f"Robotstudio MCP {__version__}", file=sys.stderr)
+    print(f"Workspace: {Path(arguments.workspace).resolve()}", file=sys.stderr)
+    run_mcp(arguments.workspace)
+    return 0
 
 
 def _catalog(arguments: argparse.Namespace) -> int:
