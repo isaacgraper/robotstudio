@@ -155,6 +155,7 @@ function App() {
     if (!document) return;
     try {
       const result = await previewDocument(document);
+      setValidation(null);
       setPreview(result);
     } catch (e) {
       setError("Preview failed");
@@ -166,6 +167,7 @@ function App() {
     if (!document) return;
     try {
       const result = await validateDocument(document, dryRun);
+      setPreview(null);
       setValidation(result.validation);
     } catch (e) {
       setError("Validation failed");
