@@ -65,11 +65,19 @@ def dry_run(source: str, workspace: Path | None = None) -> ValidationResult:
     path.write_text(source, encoding="utf-8")
     try:
         suite = TestSuite.from_file_system(path)
+        stream = io.StringIO()
         with (
-            contextlib.redirect_stdout(io.StringIO()),
-            contextlib.redirect_stderr(io.StringIO()),
+            contextlib.redirect_stdout(stream),
+            contextlib.redirect_stderr(stream),
         ):
-            result = suite.run(dryrun=True, output=None, log=None, report=None)
+            result = suite.run(
+                dryrun=True,
+                output=None,
+                log=None,
+                report=None,
+                stdout=stream,
+                stderr=stream,
+            )
     except (DataError, Information) as error:
         return ValidationResult(
             ok=False,
