@@ -1,4 +1,31 @@
+/**
+ * Robotstudio - Visual Robot Framework Authoring Platform
+ * Block Definitions
+ *
+ * Defines all custom Blockly blocks for Robot Framework visual authoring.
+ * Blocks include control flow (if, for, while, try), variables, calls,
+ * user keywords, and suite structure. Uses Blockly's JSON block definition format.
+ *
+ * @packageDocumentation
+ */
+
 import * as Blockly from "blockly";
+
+/**
+ * Global reference to the active Blockly workspace.
+ * Used by dynamic dropdowns (e.g., call block keyword list) to access
+ * the current keyword catalog.
+ */
+let targetWorkspace: Blockly.WorkspaceSvg | null = null;
+
+/**
+ * Sets the target workspace for dynamic dropdowns.
+ *
+ * @param ws - The active Blockly workspace, or null to clear
+ */
+export const setTargetWorkspace = (ws: Blockly.WorkspaceSvg | null) => {
+  targetWorkspace = ws;
+};
 
 export const callBlock = {
   type: "robot_call",
@@ -9,8 +36,8 @@ export const callBlock = {
       name: "KEYWORD",
       options: () => {
         // This function will be called by Blockly when rendering the dropdown.
-        // It reads the current keyword options from the global registry.
-        const ws = Blockly.getMainWorkspace();
+        // It reads the current keyword options from the registered workspace.
+        const ws = targetWorkspace;
         if (ws) {
           const keywords = (ws as any).targetKeywords || [];
           return keywords.map((kw: any) => [kw.name, kw.name]);

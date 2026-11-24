@@ -1,8 +1,22 @@
+/**
+ * Robotstudio - Visual Robot Framework Authoring Platform
+ * Application Entry Point
+ *
+ * Bootstraps the React application with an error boundary for graceful
+ * error handling. Renders the main App component into the DOM.
+ *
+ * @packageDocumentation
+ */
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
+/**
+ * ErrorBoundary - Catches React rendering errors and displays a friendly message.
+ * Prevents the entire app from crashing on component errors.
+ */
 interface ErrorBoundaryState {
   error: Error | null;
 }

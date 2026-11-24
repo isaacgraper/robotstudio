@@ -1,5 +1,22 @@
+/**
+ * Robotstudio - Visual Robot Framework Authoring Platform
+ * Block Mutators
+ *
+ * Mutators define dynamic behavior for blocks that can change their shape
+ * at runtime (e.g., adding/removing elseif branches, except clauses, or
+ * call arguments). Each mutator implements Blockly's mutator interface
+ * with decompose/compose for the mutator dialog and updateShape_ for
+ * direct shape updates.
+ *
+ * @packageDocumentation
+ */
+
 import * as Blockly from "blockly";
 
+/**
+ * Mutator for the IF block - manages ELSEIF and ELSE branches.
+ * Supports dynamic addition/removal of elseif clauses and optional else branch.
+ */
 const ifMutator = {
   saveExtraState: function (this: Blockly.Block) {
     return {
@@ -30,6 +47,7 @@ const ifMutator = {
       if (connection && elseBlock.previousConnection) {
         connection.connect(elseBlock.previousConnection);
       }
+      connection = elseBlock.nextConnection;
     }
     return containerBlock;
   },
@@ -79,6 +97,10 @@ const ifMutator = {
   },
 };
 
+/**
+ * Mutator for the TRY block - manages EXCEPT, ELSE, and FINALLY branches.
+ * Supports dynamic except clauses with pattern/variable, optional else and finally.
+ */
 const tryMutator = {
   saveExtraState: function (this: Blockly.Block) {
     return {
@@ -122,6 +144,7 @@ const tryMutator = {
       if (connection && finallyBlock.previousConnection) {
         connection.connect(finallyBlock.previousConnection);
       }
+      connection = finallyBlock.nextConnection;
     }
     return containerBlock;
   },
@@ -191,6 +214,10 @@ const tryMutator = {
   },
 };
 
+/**
+ * Mutator for the CALL block - manages argument list.
+ * Supports dynamic addition/removal of positional and named arguments.
+ */
 const callMutator = {
   saveExtraState: function (this: Blockly.Block) {
     return { argCount: (this as any).argCount_ || 0 };
@@ -247,10 +274,18 @@ const callMutator = {
   },
 };
 
+/**
+ * Registry of all block mutators.
+ * Keys match the mutator names referenced in block definitions.
+ */
 export const mutators = {
   if_mutator: ifMutator,
   try_mutator: tryMutator,
   call_mutator: callMutator,
 };
 
+/**
+ * Individual mutator exports for direct registration.
+ * Used by BlocklyEditor to register mutators via registerMutator().
+ */
 export { ifMutator, tryMutator, callMutator };
