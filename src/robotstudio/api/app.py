@@ -40,6 +40,7 @@ from robotstudio.runner import (
     load_run,
     run_suite,
 )
+from robotstudio.settings import allow_run_from_env
 from robotstudio.workspace.demo import demo_document
 from robotstudio.workspace.store import SuiteEntry, Workspace, WorkspaceError
 
@@ -51,14 +52,22 @@ def default_workspace() -> Path:
     return Path(os.environ.get("ROBOTSTUDIO_WORKSPACE", "workspace"))
 
 
-def create_app(workspace: Path | str | None = None) -> FastAPI:
-    """Build the Robotstudio application."""
+def create_app(
+    workspace: Path | str | None = None,
+    *,
+    allow_run: bool | None = None,
+) -> FastAPI:
+    """Build the Robotstudio application.
+
+    ``allow_run`` defaults to the ``ROBOTSTUDIO_ALLOW_RUN`` environment switch.
+    """
     app = FastAPI(
         title="Robotstudio",
         version=__version__,
         description="Visual authoring and execution for Robot Framework.",
     )
     app.state.workspace = Workspace(workspace or default_workspace())
+    app.state.allow_run = allow_run_from_env() if allow_run is None else allow_run
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -91,6 +100,7 @@ def _register_api(app: FastAPI) -> None:
             robot_version=robot.version.VERSION,  # type: ignore[attr-defined]
             workspace=str(workspace.root),
             libraries=configured_libraries(),
+            allow_run=app.state.allow_run,
         )
 
     @app.get("/api/catalog", response_model=Catalog)
@@ -180,6 +190,8 @@ def _register_api(app: FastAPI) -> None:
 
     @app.post("/api/suites/{stem}/run", response_model=RunResponse)
     def run(stem: str, request: RunRequest | None = None) -> RunResponse:
+        if not app.state.allow_run:
+            raise HTTPException(status_code=403, detail="Suite execution is disabled")
         options = request or RunRequest()
         try:
             summary = run_suite(

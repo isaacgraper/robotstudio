@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -36,6 +36,25 @@ jobs:
         run: poetry run mypy src
       - name: Test
         run: poetry run pytest tests -q
+
+  editable-install:
+    name: Editable install check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Poetry
+        run: pip install "poetry>=2.0,<3.0"
+      - name: Install in editable mode
+        run: poetry install --all-extras --editable
+      - name: Smoke test editable install
+        run: |
+          python -m robotstudio --version
+          python -m robotstudio init --workspace /tmp/ws --force
+          python -m robotstudio validate /tmp/ws/robotstudio-demo.canvas.json --dry-run
+          python -m robotstudio run robotstudio-demo --workspace /tmp/ws
 
   web:
     name: Web build

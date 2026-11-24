@@ -51,7 +51,10 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 packages = [{ include = "robotstudio", from = "src" }]
-include = [{ path = "src/robotstudio/web_dist", format = ["sdist", "wheel"] }]
+include = [
+    { path = "src/robotstudio/web_dist", format = ["sdist", "wheel"] },
+    { path = "CHANGELOG.md", format = ["sdist"] },
+]
 
 [tool.poetry.group.dev.dependencies]
 httpx = ">=0.27"
