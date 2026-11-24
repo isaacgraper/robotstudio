@@ -61,3 +61,28 @@ class InitResponse(BaseModel):
 
     created: bool
     suite: SavedSuiteResponse
+
+
+class RunRequest(BaseModel):
+    """Options for executing a stored suite."""
+
+    timeout: float = 600.0
+    redact: list[str] = Field(default_factory=list)
+
+
+class RunResponse(BaseModel):
+    """Outcome of a suite run."""
+
+    run_id: str
+    stem: str
+    status: str
+    started_at: str
+    finished_at: str
+    duration_ms: int
+    total: int
+    passed: int
+    failed: int
+    skipped: int
+    cases: list[dict[str, object]] = Field(default_factory=list)
+    output_dir: str
+    error: str | None = None

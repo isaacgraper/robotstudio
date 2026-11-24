@@ -18,6 +18,8 @@ from robotstudio.api.schemas import (
     HealthResponse,
     InitResponse,
     PreviewResponse,
+    RunRequest,
+    RunResponse,
     SavedSuiteResponse,
     SuiteResponse,
     ValidationRequest,
@@ -28,6 +30,15 @@ from robotstudio.keywords.catalog import (
     clear_catalog_cache,
     configured_libraries,
     load_catalog,
+)
+from robotstudio.runner import (
+    RunBusyError,
+    RunError,
+    RunSummary,
+    export_run,
+    list_runs,
+    load_run,
+    run_suite,
 )
 from robotstudio.workspace.demo import demo_document
 from robotstudio.workspace.store import SuiteEntry, Workspace, WorkspaceError
@@ -167,6 +178,41 @@ def _register_api(app: FastAPI) -> None:
         )
         return PreviewResponse(robot_text=robot_text, validation=result.as_dict())
 
+    @app.post("/api/suites/{stem}/run", response_model=RunResponse)
+    def run(stem: str, request: RunRequest | None = None) -> RunResponse:
+        options = request or RunRequest()
+        try:
+            summary = run_suite(
+                _store(app),
+                stem,
+                timeout=options.timeout,
+                redact_patterns=tuple(options.redact),
+            )
+        except RunBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except RunError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _run_response(summary)
+
+    @app.get("/api/runs", response_model=list[RunResponse])
+    def runs() -> list[RunResponse]:
+        return [_run_response(summary) for summary in list_runs(_store(app))]
+
+    @app.get("/api/runs/{run_id}", response_model=RunResponse)
+    def run_detail(run_id: str) -> RunResponse:
+        try:
+            return _run_response(load_run(_store(app), run_id))
+        except RunError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/runs/{run_id}/export/{export}")
+    def run_export(run_id: str, export: str) -> FileResponse:
+        try:
+            path, media_type = export_run(_store(app), run_id, export)
+        except RunError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return FileResponse(path, media_type=media_type, filename=path.name)
+
     @app.post("/api/init", response_model=InitResponse)
     def init_workspace() -> InitResponse:
         workspace = _store(app)
@@ -184,6 +230,24 @@ def _register_api(app: FastAPI) -> None:
                 validation=validation.as_dict(),
             ),
         )
+
+
+def _run_response(summary: RunSummary) -> RunResponse:
+    return RunResponse(
+        run_id=summary.run_id,
+        stem=summary.stem,
+        status=summary.status,
+        started_at=summary.started_at,
+        finished_at=summary.finished_at,
+        duration_ms=summary.duration_ms,
+        total=summary.total,
+        passed=summary.passed,
+        failed=summary.failed,
+        skipped=summary.skipped,
+        cases=[case.model_dump() for case in summary.cases],
+        output_dir=summary.output_dir,
+        error=summary.error,
+    )
 
 
 def _register_web(app: FastAPI) -> None:
