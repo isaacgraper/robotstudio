@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as Blockly from "blockly";
 import { allBlocks, containerBlocks, blockCategories, expertCategories } from "../blocks/definitions";
-import { mutators } from "../blocks/mutators";
+import { ifMutator, tryMutator, callMutator } from "../blocks/mutators";
 import { modelToWorkspace, workspaceToModel } from "../blocks/serialization";
 import type { CanvasDocument } from "../types/canvas";
 
@@ -22,9 +22,21 @@ function ensureBlocklyRegistered(): void {
   if (registered) return;
   Blockly.defineBlocksWithJsonArray(allBlocks);
   Blockly.defineBlocksWithJsonArray(Object.values(containerBlocks));
-  for (const [name, mutator] of Object.entries(mutators)) {
-    Blockly.Extensions.register(name, mutator as any);
-  }
+  // Mutators must be registered with registerMutator, not register
+  Blockly.Extensions.registerMutator("if_mutator", ifMutator, undefined, [
+    "robot_if_container",
+    "robot_if_elseif",
+    "robot_if_else",
+  ]);
+  Blockly.Extensions.registerMutator("try_mutator", tryMutator, undefined, [
+    "robot_try_container",
+    "robot_try_except",
+    "robot_try_else",
+    "robot_try_finally",
+  ]);
+  Blockly.Extensions.registerMutator("call_mutator", callMutator, undefined, [
+    "robot_call_args_container",
+  ]);
   registered = true;
 }
 
