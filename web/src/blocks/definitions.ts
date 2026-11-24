@@ -1,8 +1,23 @@
+import * as Blockly from "blockly";
+
 export const callBlock = {
   type: "robot_call",
   message0: "%1 %2",
   args0: [
-    { type: "field_dropdown", name: "KEYWORD", options: [] },
+    {
+      type: "field_dropdown",
+      name: "KEYWORD",
+      options: () => {
+        // This function will be called by Blockly when rendering the dropdown.
+        // It reads the current keyword options from the global registry.
+        const ws = Blockly.getMainWorkspace();
+        if (ws) {
+          const keywords = (ws as any).targetKeywords || [];
+          return keywords.map((kw: any) => [kw.name, kw.name]);
+        }
+        return [];
+      },
+    },
     { type: "input_statement", name: "ARGS" },
   ],
   previousStatement: null,

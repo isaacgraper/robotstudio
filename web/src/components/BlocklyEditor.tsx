@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as Blockly from "blockly";
 import { allBlocks, containerBlocks, blockCategories, expertCategories } from "../blocks/definitions";
 import { mutators } from "../blocks/mutators";
@@ -7,28 +7,60 @@ import type { CanvasDocument } from "../types/canvas";
 
 interface BlocklyEditorProps {
   initialDocument?: CanvasDocument;
+  documentKey?: string;
   onChange?: (document: CanvasDocument) => void;
   readonly?: boolean;
   expertMode?: boolean;
   keywordOptions?: Array<{ name: string; library: string; category: string }>;
 }
 
+// Blockly throws when a block or extension is registered twice, so registration
+// happens exactly once per page load, outside the React lifecycle.
+let registered = false;
+
+function ensureBlocklyRegistered(): void {
+  if (registered) return;
+  Blockly.defineBlocksWithJsonArray(allBlocks);
+  Blockly.defineBlocksWithJsonArray(Object.values(containerBlocks));
+  for (const [name, mutator] of Object.entries(mutators)) {
+    Blockly.Extensions.register(name, mutator as any);
+  }
+  registered = true;
+}
+
 export const BlocklyEditor: React.FC<BlocklyEditorProps> = ({
   initialDocument,
+  documentKey,
   onChange,
   readonly = false,
   expertMode = false,
   keywordOptions = [],
 }) => {
   const workspaceRef = useRef<HTMLDivElement>(null);
-  const blocklyWorkspaceRef = useRef<Blockly.WorkspaceSvg | null>(null);
-  const [initialized, setInitialized] = useState(false);
+  const blocklyRef = useRef<Blockly.WorkspaceSvg | null>(null);
+  const onChangeRef = useRef(onChange);
+  const documentRef = useRef(initialDocument);
+  const loadedKeyRef = useRef<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  onChangeRef.current = onChange;
+  if (initialDocument) documentRef.current = initialDocument;
+
+  const toolbox = useMemo(
+    () => buildToolbox(expertMode, keywordOptions),
+    [expertMode, keywordOptions]
+  );
+  // The inject effect must not re-run when the toolbox changes, so it reads the
+  // latest toolbox through a ref and updates it in place afterwards.
+  const toolboxRef = useRef(toolbox);
+  toolboxRef.current = toolbox;
 
   useEffect(() => {
-    if (!workspaceRef.current || initialized) return;
+    if (!workspaceRef.current) return;
 
+    ensureBlocklyRegistered();
     const ws = Blockly.inject(workspaceRef.current, {
-      toolbox: buildToolbox(expertMode, keywordOptions),
+      toolbox: toolboxRef.current,
       trashcan: true,
       zoom: { controls: true, wheel: true, startScale: 1, maxScale: 3, minScale: 0.3, scaleSpeed: 1.2 },
       grid: { spacing: 20, length: 3, colour: "#ccc", snap: true },
@@ -38,63 +70,60 @@ export const BlocklyEditor: React.FC<BlocklyEditorProps> = ({
       sounds: false,
     });
 
-    registerBlocks();
-    registerMutators();
-    blocklyWorkspaceRef.current = ws;
+    // Attach keyword options to the workspace for dynamic dropdowns
+    (ws as any).targetKeywords = keywordOptions;
 
-    if (initialDocument) {
-      loadDocument(ws, initialDocument);
-    } else {
-      createDefaultStructure(ws);
-    }
+    blocklyRef.current = ws;
+    loadedKeyRef.current = null;
 
     ws.addChangeListener(() => {
-      if (onChange && !ws.isDragging()) {
-        const workspaceJson = Blockly.serialization.workspaces.save(ws);
-        const doc = workspaceToModel(workspaceJson as any, initialDocument?.name || "Untitled");
-        onChange(doc);
-      }
+      const notify = onChangeRef.current;
+      if (!notify || ws.isDragging()) return;
+      const workspaceJson = Blockly.serialization.workspaces.save(ws);
+      notify(workspaceToModel(workspaceJson as any, documentRef.current?.name || "Untitled"));
     });
 
-    setInitialized(true);
+    setReady(true);
 
     return () => {
       ws.dispose();
-      blocklyWorkspaceRef.current = null;
-      setInitialized(false);
+      blocklyRef.current = null;
+      setReady(false);
     };
-  }, [initialized, readonly, expertMode, keywordOptions]);
+  }, [readonly]);
 
-  const registerBlocks = () => {
-    Blockly.defineBlocksWithJsonArray(allBlocks);
-    Blockly.defineBlocksWithJsonArray(Object.values(containerBlocks));
-  };
+  // Reload the canvas only when the selected suite changes, never on the echo of
+  // our own onChange callback.
+  useEffect(() => {
+    const ws = blocklyRef.current;
+    if (!ws || !ready) return;
 
-  const registerMutators = () => {
-    Object.entries(mutators).forEach(([name, mutator]) => {
-      Blockly.Extensions.register(name, mutator as any);
-    });
-  };
+    const key = documentKey ?? "default";
+    if (loadedKeyRef.current === key) return;
+    loadedKeyRef.current = key;
 
-  const loadDocument = (ws: Blockly.WorkspaceSvg, document: CanvasDocument) => {
-    const workspaceJson = modelToWorkspace(document);
-    Blockly.serialization.workspaces.load(workspaceJson as any, ws);
-  };
+    ws.clear();
+    const document = documentRef.current;
+    if (document) {
+      Blockly.serialization.workspaces.load(modelToWorkspace(document) as any, ws);
+    } else {
+      const suiteBlock = ws.newBlock("robot_suite");
+      suiteBlock.initSvg();
+      suiteBlock.moveBy(50, 50);
+    }
+  }, [documentKey, ready, initialDocument]);
 
-  const createDefaultStructure = (ws: Blockly.WorkspaceSvg) => {
-    const suiteBlock = ws.newBlock("robot_suite");
-    suiteBlock.initSvg();
-    suiteBlock.moveBy(50, 50);
-  };
+  useEffect(() => {
+    blocklyRef.current?.updateToolbox(toolbox);
+    if (blocklyRef.current) {
+      (blocklyRef.current as any).targetKeywords = keywordOptions;
+    }
+  }, [toolbox]);
 
-  const getWorkspaceJson = useCallback(() => {
-    if (!blocklyWorkspaceRef.current) return null;
-    return Blockly.serialization.workspaces.save(blocklyWorkspaceRef.current);
-  }, []);
-
-  const downloadWorkspace = useCallback(() => {
-    const json = getWorkspaceJson();
-    if (!json) return;
+  const downloadWorkspace = () => {
+    const ws = blocklyRef.current;
+    if (!ws) return;
+    const json = Blockly.serialization.workspaces.save(ws);
     const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -102,15 +131,15 @@ export const BlocklyEditor: React.FC<BlocklyEditorProps> = ({
     a.download = "workspace.blockly.json";
     a.click();
     URL.revokeObjectURL(url);
-  }, [getWorkspaceJson]);
+  };
 
   return (
     <div className="blockly-editor">
       <div className="blockly-toolbar">
-        <button onClick={downloadWorkspace} disabled={!initialized}>
+        <button onClick={downloadWorkspace} disabled={!ready}>
           Download Workspace JSON
         </button>
-        <span className="status">{initialized ? "Ready" : "Initializing..."}</span>
+        <span className="status">{ready ? "Ready" : "Initializing..."}</span>
       </div>
       <div ref={workspaceRef} className="blockly-workspace" />
     </div>

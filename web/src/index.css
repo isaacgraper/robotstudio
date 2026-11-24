@@ -535,3 +535,31 @@ body {
     transform: translateX(0);
   }
 }
+.app-error {
+  padding: 32px;
+  max-width: 900px;
+  margin: 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.app-error h1 {
+  font-family: system-ui, sans-serif;
+  font-size: 1.25rem;
+  margin-bottom: 16px;
+}
+
+.app-error pre {
+  white-space: pre-wrap;
+  background: #fff1f0;
+  border: 1px solid #ffa39e;
+  border-radius: 6px;
+  padding: 12px;
+  color: #a8071a;
+}
+
+.app-error button {
+  margin-top: 16px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { BlocklyEditor } from "./components/BlocklyEditor";
 import { fetchCatalog, fetchSuites, fetchSuite, saveSuite, updateSuite, deleteSuite, previewDocument, validateDocument, initWorkspace, runSuite, runExportUrl, catalogToKeywordOptions } from "./api/client";
 import type { RunSummary } from "./api/client";
@@ -160,7 +160,11 @@ function App() {
     }
   };
 
-  const keywordOptions = catalog ? catalogToKeywordOptions(catalog) : [];
+  // Stable identity: Blockly only rebuilds its toolbox when this actually changes.
+  const keywordOptions = useMemo(
+    () => (catalog ? catalogToKeywordOptions(catalog) : []),
+    [catalog]
+  );
 
   if (loading) {
     return (
@@ -238,6 +242,7 @@ function App() {
                 <div className="blockly-pane">
                   <BlocklyEditor
                     initialDocument={document}
+                    documentKey={currentSuite?.stem ?? "new"}
                     onChange={handleDocumentChange}
                     expertMode={expertMode}
                     keywordOptions={keywordOptions}
@@ -257,8 +262,8 @@ function App() {
                         </div>
                         {run.error && <p className="run-error">{run.error}</p>}
                         <ul className="run-cases">
-                          {run.cases.map((c, i) => (
-                            <li key={i} className={c.status.toLowerCase()}>
+                          {(run.cases ?? []).map((c, i) => (
+                            <li key={i} className={(c.status ?? "").toLowerCase()}>
                               <strong>{c.status}</strong> {c.name}
                               <span className="run-case-time">{c.elapsed_ms} ms</span>
                               {c.message && <em>{c.message}</em>}
