@@ -209,26 +209,6 @@ npm run build
 `poetry build` includes `src/robotstudio/web_dist`, so the published wheel is
 self-contained.
 
-## Project structure
-
-```text
-robotstudio/
-├── src/robotstudio/
-│   ├── api/           # FastAPI application and schemas
-│   ├── exports/       # JUnit, CSV, JSON and bundle exporters
-│   ├── generator/     # Robot writer and validation
-│   ├── keywords/      # libdoc catalog
-│   ├── mcp/           # MCP server (tools, resources, prompts)
-│   ├── model/         # Canvas document and result models
-│   ├── runner/        # Suite execution and run history
-│   ├── workspace/     # Storage, demo suite and .robot importer
-│   ├── cli.py
-│   └── __main__.py
-├── web/               # React + TypeScript + Blockly frontend
-├── tests/
-└── pyproject.toml
-```
-
 ## License
 
 MIT
