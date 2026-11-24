@@ -1,9 +1,23 @@
+/**
+ * Robotstudio - Visual Robot Framework Authoring Platform
+ * Main Application Component
+ *
+ * Top-level React component orchestrating the UI: suite sidebar, Blockly editor,
+ * preview/validation/run panes, and toolbar actions. Communicates with the
+ * backend API via the client module.
+ *
+ * @packageDocumentation
+ */
+
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { BlocklyEditor } from "./components/BlocklyEditor";
 import { fetchCatalog, fetchSuites, fetchSuite, saveSuite, updateSuite, deleteSuite, previewDocument, validateDocument, initWorkspace, runSuite, runExportUrl, catalogToKeywordOptions } from "./api/client";
 import type { RunSummary } from "./api/client";
 import type { CanvasDocument } from "./types/canvas";
 
+/**
+ * Suite entry as displayed in the sidebar list.
+ */
 interface SuiteEntry {
   stem: string;
   name: string;
@@ -12,6 +26,14 @@ interface SuiteEntry {
   updated: string;
 }
 
+/**
+ * App - Root component for the Robotstudio web application.
+ *
+ * Manages global state: catalog, suite list, current document, and UI panes.
+ * Provides handlers for all user actions (save, run, validate, preview, delete).
+ *
+ * @returns Main application layout
+ */
 function App() {
   const [catalog, setCatalog] = useState<{ keywords: Array<any> } | null>(null);
   const [suites, setSuites] = useState<SuiteEntry[]>([]);

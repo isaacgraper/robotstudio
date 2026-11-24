@@ -1,16 +1,37 @@
+/**
+ * Robotstudio - Visual Robot Framework Authoring Platform
+ * BlocklyEditor Component
+ *
+ * A React component that embeds a Blockly workspace for visual Robot Framework
+ * suite authoring. Handles block registration, mutator management, workspace
+ * serialization, and dynamic keyword dropdowns from the catalog.
+ *
+ * @packageDocumentation
+ */
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as Blockly from "blockly";
 import { allBlocks, containerBlocks, blockCategories, expertCategories } from "../blocks/definitions";
 import { ifMutator, tryMutator, callMutator } from "../blocks/mutators";
 import { modelToWorkspace, workspaceToModel } from "../blocks/serialization";
+import { setTargetWorkspace } from "../blocks/definitions";
 import type { CanvasDocument } from "../types/canvas";
 
+/**
+ * Props for the BlocklyEditor component.
+ */
 interface BlocklyEditorProps {
+  /** Initial canvas document to load into the workspace. */
   initialDocument?: CanvasDocument;
+  /** Key identifying the current document; change triggers workspace reload. */
   documentKey?: string;
+  /** Callback fired when the workspace content changes. */
   onChange?: (document: CanvasDocument) => void;
+  /** Whether the workspace should be read-only. */
   readonly?: boolean;
+  /** Enable expert mode with full category set. */
   expertMode?: boolean;
+  /** Keyword options for the dynamic call block dropdown. */
   keywordOptions?: Array<{ name: string; library: string; category: string }>;
 }
 
@@ -18,11 +39,14 @@ interface BlocklyEditorProps {
 // happens exactly once per page load, outside the React lifecycle.
 let registered = false;
 
+/**
+ * Registers all custom blocks and mutators with Blockly.
+ * Called once per session on first workspace injection.
+ */
 function ensureBlocklyRegistered(): void {
   if (registered) return;
   Blockly.defineBlocksWithJsonArray(allBlocks);
   Blockly.defineBlocksWithJsonArray(Object.values(containerBlocks));
-  // Mutators must be registered with registerMutator, not register
   Blockly.Extensions.registerMutator("if_mutator", ifMutator, undefined, [
     "robot_if_container",
     "robot_if_elseif",
@@ -40,6 +64,20 @@ function ensureBlocklyRegistered(): void {
   registered = true;
 }
 
+/**
+ * BlocklyEditor - Embedded Blockly workspace for Robot Framework authoring.
+ *
+ * Renders a Blockly workspace with custom Robot Framework blocks, dynamic
+ * keyword dropdowns, and mutators for control flow structures.
+ *
+ * @param initialDocument - Canvas document to load initially
+ * @param documentKey - Key that triggers workspace reload when changed
+ * @param onChange - Callback receiving the updated CanvasDocument
+ * @param readonly - If true, workspace is read-only
+ * @param expertMode - If true, shows all block categories
+ * @param keywordOptions - Keywords available in the call block dropdown
+ * @returns React element containing the Blockly workspace
+ */
 export const BlocklyEditor: React.FC<BlocklyEditorProps> = ({
   initialDocument,
   documentKey,
@@ -62,8 +100,6 @@ export const BlocklyEditor: React.FC<BlocklyEditorProps> = ({
     () => buildToolbox(expertMode, keywordOptions),
     [expertMode, keywordOptions]
   );
-  // The inject effect must not re-run when the toolbox changes, so it reads the
-  // latest toolbox through a ref and updates it in place afterwards.
   const toolboxRef = useRef(toolbox);
   toolboxRef.current = toolbox;
 
@@ -84,6 +120,7 @@ export const BlocklyEditor: React.FC<BlocklyEditorProps> = ({
 
     // Attach keyword options to the workspace for dynamic dropdowns
     (ws as any).targetKeywords = keywordOptions;
+    setTargetWorkspace(ws);
 
     blocklyRef.current = ws;
     loadedKeyRef.current = null;
@@ -130,6 +167,7 @@ export const BlocklyEditor: React.FC<BlocklyEditorProps> = ({
     if (blocklyRef.current) {
       (blocklyRef.current as any).targetKeywords = keywordOptions;
     }
+    setTargetWorkspace(blocklyRef.current);
   }, [toolbox]);
 
   const downloadWorkspace = () => {
@@ -158,6 +196,13 @@ export const BlocklyEditor: React.FC<BlocklyEditorProps> = ({
   );
 };
 
+/**
+ * Builds the Blockly toolbox configuration.
+ *
+ * @param expertMode - Whether to use expert categories
+ * @param keywordOptions - Keywords for the dynamic call block dropdown
+ * @returns Toolbox configuration object
+ */
 function buildToolbox(expertMode: boolean, keywordOptions: Array<{ name: string; library: string; category: string }>): any {
   const categories = expertMode ? expertCategories : blockCategories;
 
