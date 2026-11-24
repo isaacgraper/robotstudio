@@ -47,6 +47,7 @@ class HealthResponse(BaseModel):
     robot_version: str
     workspace: str
     libraries: list[str] = Field(default_factory=list)
+    allow_run: bool = True
 
 
 class ValidationRequest(BaseModel):

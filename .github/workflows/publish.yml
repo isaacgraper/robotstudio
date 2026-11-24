@@ -3,6 +3,8 @@ name: Publish
 on:
   push:
     tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       target:
@@ -41,6 +43,16 @@ jobs:
         run: poetry build
       - name: Check metadata
         run: twine check dist/*
+      - name: Verify version matches tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          PKG_VERSION=$(grep '^version =' pyproject.toml | cut -d'"' -f2)
+          TAG_VERSION=${GITHUB_REF_NAME#v}
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "Version mismatch: pyproject.toml=$PKG_VERSION tag=$TAG_VERSION"
+            exit 1
+          fi
+          echo "Version matches: $PKG_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -48,7 +60,7 @@ jobs:
 
   testpypi:
     name: Publish to TestPyPI
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi')
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -67,7 +79,7 @@ jobs:
 
   pypi:
     name: Publish to PyPI
-    if: github.event_name == 'push' || inputs.target == 'pypi'
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
     needs: build
     runs-on: ubuntu-latest
     environment:

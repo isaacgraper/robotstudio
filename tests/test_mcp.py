@@ -104,3 +104,29 @@ def test_unknown_suite_raises(server) -> None:
 
     with pytest.raises(ToolError):
         _call(server, "studio_get_suite", {"stem": "absent"})
+
+
+def test_no_run_disables_execution_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    Workspace(tmp_path).save(demo_document(), "demo")
+    monkeypatch.setenv("ROBOTSTUDIO_WORKSPACE", str(tmp_path))
+    server = create_server(allow_run=False)
+    tools = asyncio.run(server.list_tools())
+    names = {tool.name for tool in tools}
+    assert "studio_run_suite" not in names
+    # but export and history remain
+    assert "studio_list_runs" in names
+    assert "studio_export_run" in names
+
+
+def test_no_run_env_var_disables_execution_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    Workspace(tmp_path).save(demo_document(), "demo")
+    monkeypatch.setenv("ROBOTSTUDIO_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("ROBOTSTUDIO_ALLOW_RUN", "false")
+    server = create_server()
+    tools = asyncio.run(server.list_tools())
+    names = {tool.name for tool in tools}
+    assert "studio_run_suite" not in names
