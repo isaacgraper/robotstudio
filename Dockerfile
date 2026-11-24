@@ -1,26 +1,41 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.11-slim AS base
+# --- frontend: build the Blockly editor -------------------------------------
+FROM node:22-alpine AS web
+
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+# --- build: produce a wheel that already contains the SPA -------------------
+FROM python:3.11-slim AS build
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /src
+RUN pip install "poetry>=2.0,<3.0"
+COPY pyproject.toml README.md ./
+COPY src ./src
+COPY --from=web /web/dist ./src/robotstudio/web_dist
+RUN poetry build --format wheel
+
+# --- runtime ----------------------------------------------------------------
+FROM python:3.11-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    ROBOTSTUDIO_WORKSPACE=/workspace
 
 WORKDIR /app
+COPY --from=build /src/dist/*.whl /tmp/
+RUN pip install --no-cache-dir /tmp/*.whl && rm -f /tmp/*.whl
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libffi-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY pyproject.toml README.md ./
-COPY src ./src
-
-RUN pip install --no-cache-dir -e .
-
+VOLUME ["/workspace"]
 EXPOSE 8000
 
-ENV ROBOT_CANVAS_WORKSPACE=/workspace
-
-CMD ["robot-canvas", "serve", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["robotstudio", "serve", "--host", "0.0.0.0", "--port", "8000"]

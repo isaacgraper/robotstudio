@@ -1,19 +1,24 @@
-[build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "robot-canvas"
+name = "robotstudio"
 version = "0.1.0"
-description = "Visual, config-driven authoring and execution for Robot Framework"
+description = "Visual authoring and execution environment for Robot Framework suites"
 readme = "README.md"
-requires-python = ">=3.11"
-license = { text = "MIT" }
-authors = [{ name = "Robot Canvas Contributors" }]
-keywords = ["robotframework", "blockly", "hil", "test-automation"]
+requires-python = ">=3.11,<4.0"
+license = "MIT"
+authors = [{ name = "Isaac Kleimmann Graper", email = "isaackleimmanngraper@gmail.com" }]
+keywords = [
+  "robotframework",
+  "blockly",
+  "test-automation",
+  "hil",
+  "no-code",
+  "visual-programming",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
+  "Framework :: Robot Framework",
   "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -29,24 +34,31 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-  "httpx>=0.27",
-  "mypy>=1.10",
-  "pre-commit>=3.7",
-  "pytest>=8.0",
-  "ruff>=0.5",
-]
+mcp = ["mcp>=1.2,<2"]
 
 [project.scripts]
-robot-canvas = "robot_canvas.cli:main"
-robotcanvas = "robot_canvas.cli:main"
+robotstudio = "robotstudio.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["robot_canvas*"]
+[project.urls]
+Homepage = "https://github.com/isaacgraper/robotstudio"
+Repository = "https://github.com/isaacgraper/robotstudio"
+Issues = "https://github.com/isaacgraper/robotstudio/issues"
+Changelog = "https://github.com/isaacgraper/robotstudio/blob/main/CHANGELOG.md"
 
-[tool.setuptools.package-data]
-robot_canvas = ["py.typed", "web_dist/**/*"]
+[build-system]
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "robotstudio", from = "src" }]
+include = [{ path = "src/robotstudio/web_dist", format = ["sdist", "wheel"] }]
+
+[tool.poetry.group.dev.dependencies]
+httpx = ">=0.27"
+mypy = ">=1.10"
+pre-commit = ">=3.7"
+pytest = ">=8.0"
+ruff = ">=0.5"
 
 [tool.ruff]
 line-length = 88
@@ -56,7 +68,7 @@ target-version = "py311"
 select = ["E", "F", "I", "W", "D", "UP", "B"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["robot_canvas"]
+known-first-party = ["robotstudio"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -74,7 +86,7 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-exclude = ["web", "src/robot_canvas/web_dist"]
+exclude = ["web", "src/robotstudio/web_dist"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

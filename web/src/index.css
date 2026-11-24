@@ -397,6 +397,79 @@ body {
   background: #78350f;
 }
 
+.run-error {
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+  color: var(--danger);
+}
+
+.run-cases {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+}
+
+.run-cases li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.run-cases li.fail strong {
+  color: var(--danger);
+}
+
+.run-cases li.pass strong {
+  color: #86efac;
+}
+
+.run-cases li.skip strong {
+  color: #f59e0b;
+}
+
+.run-case-time {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-cases em {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 0.75rem;
+}
+
+.run-exports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.run-exports a {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.run-exports a:hover {
+  border-color: var(--accent);
+}
+
+.run-artifacts {
+  margin: 0.75rem 0 0;
+  font-size: 0.7rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
 .empty-state {
   flex: 1;
   display: flex;

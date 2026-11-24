@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from robot_canvas.generator.validation import dry_run, parse_source
-from robot_canvas.workspace.demo import demo_document
+from robotstudio.generator.validation import dry_run, parse_source
+from robotstudio.workspace.demo import demo_document
 
 VALID = """*** Test Cases ***
 Example

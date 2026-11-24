@@ -1,19 +1,22 @@
-version: "3.9"
-
 services:
-  backend:
+  robotstudio:
     build:
       context: .
       dockerfile: Dockerfile
+    image: robotstudio:latest
+    container_name: robotstudio
     ports:
       - "8000:8000"
     volumes:
       - ./workspace:/workspace
     environment:
-      - ROBOT_CANVAS_WORKSPACE=/workspace
+      - ROBOTSTUDIO_WORKSPACE=/workspace
     restart: unless-stopped
 
-  frontend:
+  # Hot-reloading Vite dev server. Not needed for normal use:
+  #   docker compose --profile dev up
+  web:
+    profiles: ["dev"]
     build:
       context: ./web
       dockerfile: Dockerfile
@@ -23,7 +26,7 @@ services:
       - ./web:/app
       - /app/node_modules
     environment:
-      - VITE_API_BASE=http://backend:8000
+      - VITE_API_BASE=http://localhost:8000
     depends_on:
-      - backend
+      - robotstudio
     restart: unless-stopped

@@ -28,13 +28,25 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Robot Canvas
-workspace/
+# Runtime data. Anchored on purpose: an unanchored "workspace/" also hid
+# src/robotstudio/workspace/ and kept the storage package out of the repo.
+/workspace/
+/out/
+/logs/
+/.tmp_ws/
 *.robot
+*.robotstudio.json
 *.canvas.json
-!demo/workspace/
+!tests/golden/*.robot
+
+# Scratch files
+/test_write*.txt
 
 # Node
 web/node_modules/
 web/dist/
 web/.vite/
+
+# Build output copied into the package for wheel builds
+src/robotstudio/web_dist/
+

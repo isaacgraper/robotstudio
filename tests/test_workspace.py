@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from robot_canvas.model.canvas import CanvasDocument, TestCase
-from robot_canvas.workspace.demo import demo_document
-from robot_canvas.workspace.store import Workspace, WorkspaceError, slugify
+from robotstudio.model.canvas import CanvasDocument, TestCase
+from robotstudio.workspace.demo import demo_document
+from robotstudio.workspace.store import Workspace, WorkspaceError, slugify
 
 
 def test_slugify() -> None:
-    assert slugify("Robot Canvas Demo") == "robot-canvas-demo"
+    assert slugify("Robotstudio Demo") == "robotstudio-demo"
     assert slugify("  Weird __ Name!! ") == "weird-name"
     assert slugify("***") == "suite"
 
@@ -21,12 +21,12 @@ def test_slugify() -> None:
 def test_save_writes_both_files(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     saved = workspace.save(demo_document())
-    assert saved.stem == "robot-canvas-demo"
+    assert saved.stem == "robotstudio-demo"
     assert saved.canvas_path.is_file()
     assert saved.robot_path.is_file()
     assert saved.robot_text == saved.robot_path.read_text(encoding="utf-8")
     payload = json.loads(saved.canvas_path.read_text(encoding="utf-8"))
-    assert payload["name"] == "Robot Canvas Demo"
+    assert payload["name"] == "Robotstudio Demo"
     assert payload["tests"][0]["id"].startswith("tc_")
 
 
@@ -34,7 +34,7 @@ def test_load_round_trips_document(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     workspace.save(demo_document(), "round-trip")
     loaded = workspace.load("round-trip")
-    assert loaded.name == "Robot Canvas Demo"
+    assert loaded.name == "Robotstudio Demo"
     assert [test.name for test in loaded.tests][0] == "Log A Greeting"
     assert workspace.robot_text("round-trip").startswith("*** Settings ***")
 
@@ -90,4 +90,4 @@ def test_stable_ids_survive_rename(tmp_path: Path) -> None:
 def test_no_temporary_files_remain(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     workspace.save(demo_document())
-    assert not list(tmp_path.glob(".robot-canvas-*"))
+    assert not list(tmp_path.glob(".robotstudio-*"))

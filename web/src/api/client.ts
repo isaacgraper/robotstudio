@@ -78,6 +78,48 @@ export async function initWorkspace() {
   return res.json();
 }
 
+export interface RunCase {
+  name: string;
+  suite: string;
+  status: string;
+  message: string;
+  elapsed_ms: number;
+  tags: string[];
+}
+
+export interface RunSummary {
+  run_id: string;
+  stem: string;
+  status: string;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  cases: RunCase[];
+  output_dir: string;
+  error: string | null;
+}
+
+export async function runSuite(stem: string, timeout = 600): Promise<RunSummary> {
+  const res = await fetch(`${API_BASE}/suites/${stem}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ timeout }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ detail: "Run failed" }));
+    throw new Error(detail.detail || "Run failed");
+  }
+  return res.json();
+}
+
+export function runExportUrl(runId: string, format: string): string {
+  return `${API_BASE}/runs/${runId}/export/${format}`;
+}
+
 export function catalogToKeywordOptions(catalog: { keywords: Array<{ name: string; library: string; category: string; curated: boolean }> }) {
   return catalog.keywords.map((kw) => ({
     name: kw.name,
