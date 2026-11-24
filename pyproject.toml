@@ -5,7 +5,7 @@ description = "Visual authoring and execution environment for Robot Framework su
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 license = "MIT"
-authors = [{ name = "isaacgraper", email = "isaackleimmanngraper@gmail.com" }]
+authors = [{ name = "Isaac Kleimmann Graper", email = "isaackleimmanngraper@gmail.com" }]
 keywords = [
   "robotframework",
   "blockly",
