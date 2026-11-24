@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from robot_canvas.model.canvas import (
+from robotstudio.model.canvas import (
     Argument,
     CallStep,
     CanvasDocument,
@@ -169,7 +169,7 @@ def _render_return(step: ReturnStep, level: int) -> list[str]:
 
 def _render_steps(steps: Iterable[object], level: int) -> list[str]:
     """Render a list of heterogeneous steps at ``level`` indentation."""
-    from robot_canvas.model.canvas import (
+    from robotstudio.model.canvas import (
         BreakStep,
         CommentStep,
         ContinueStep,

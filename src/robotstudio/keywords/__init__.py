@@ -1,6 +1,6 @@
 """Keyword catalog and palette support."""
 
-from robot_canvas.keywords.catalog import (
+from robotstudio.keywords.catalog import (
     ArgumentInfo,
     Catalog,
     KeywordInfo,

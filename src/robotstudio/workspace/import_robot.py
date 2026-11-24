@@ -42,7 +42,7 @@ from robot.parsing.model.statements import (
     Variable,
 )
 
-from robot_canvas.model.canvas import (
+from robotstudio.model.canvas import (
     Argument,
     BreakStep,
     CallStep,
@@ -62,13 +62,13 @@ from robot_canvas.model.canvas import (
     VarStep,
     WhileStep,
 )
-from robot_canvas.model.canvas import (
+from robotstudio.model.canvas import (
     LibraryImport as CanvasLibraryImport,
 )
-from robot_canvas.model.canvas import (
+from robotstudio.model.canvas import (
     TestCase as CanvasTestCase,
 )
-from robot_canvas.model.canvas import (
+from robotstudio.model.canvas import (
     Variable as CanvasVariable,
 )
 

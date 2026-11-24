@@ -1,10 +1,10 @@
-"""Request and response schemas for the Robot Canvas API."""
+"""Request and response schemas for the Robotstudio API."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from robot_canvas.model.canvas import CanvasDocument
+from robotstudio.model.canvas import CanvasDocument
 
 
 class DocumentRequest(BaseModel):

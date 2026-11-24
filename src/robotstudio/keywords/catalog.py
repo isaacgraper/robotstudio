@@ -133,7 +133,7 @@ class Catalog(BaseModel):
 def configured_libraries() -> list[str]:
     """Return the default libraries plus any configured extras."""
     libraries = list(DEFAULT_LIBRARIES)
-    extra = os.environ.get("ROBOT_CANVAS_LIBRARIES", "")
+    extra = os.environ.get("ROBOTSTUDIO_LIBRARIES", "")
     for name in extra.split(","):
         cleaned = name.strip()
         if cleaned and cleaned not in libraries:

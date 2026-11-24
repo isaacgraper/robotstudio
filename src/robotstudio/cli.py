@@ -1,4 +1,4 @@
-"""Command line interface for Robot Canvas."""
+"""Command line interface for Robotstudio."""
 
 from __future__ import annotations
 
@@ -7,18 +7,18 @@ import os
 import sys
 from pathlib import Path
 
-from robot_canvas import __version__
-from robot_canvas.generator.validation import dry_run, parse_source
-from robot_canvas.keywords.catalog import load_catalog
-from robot_canvas.model.canvas import CanvasDocument
-from robot_canvas.workspace.demo import demo_document
-from robot_canvas.workspace.store import Workspace, WorkspaceError
+from robotstudio import __version__
+from robotstudio.generator.validation import dry_run, parse_source
+from robotstudio.keywords.catalog import load_catalog
+from robotstudio.model.canvas import CanvasDocument
+from robotstudio.workspace.demo import demo_document
+from robotstudio.workspace.store import Workspace, WorkspaceError
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Create the command line parser."""
     parser = argparse.ArgumentParser(
-        prog="robot-canvas",
+        prog="robotstudio",
         description="Visual authoring and execution for Robot Framework.",
     )
     parser.add_argument("--version", action="version", version=__version__)
@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve = commands.add_parser("serve", help="Start the web application.")
     serve.add_argument(
         "--workspace",
-        default=os.environ.get("ROBOT_CANVAS_WORKSPACE", "workspace"),
+        default=os.environ.get("ROBOTSTUDIO_WORKSPACE", "workspace"),
         help="Directory holding canvas documents and suites.",
     )
     serve.add_argument("--host", default="127.0.0.1")
@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     init = commands.add_parser("init", help="Create a workspace with a demo suite.")
     init.add_argument(
         "--workspace",
-        default=os.environ.get("ROBOT_CANVAS_WORKSPACE", "workspace"),
+        default=os.environ.get("ROBOTSTUDIO_WORKSPACE", "workspace"),
         help="Directory to create.",
     )
     init.add_argument("--force", action="store_true", help="Overwrite the demo suite.")
@@ -83,19 +83,19 @@ def main(argv: list[str] | None = None) -> int:
 def _serve(arguments: argparse.Namespace) -> int:
     import uvicorn
 
-    os.environ["ROBOT_CANVAS_WORKSPACE"] = str(Path(arguments.workspace))
-    print(f"Robot Canvas {__version__} on http://{arguments.host}:{arguments.port}")
+    os.environ["ROBOTSTUDIO_WORKSPACE"] = str(Path(arguments.workspace))
+    print(f"Robotstudio {__version__} on http://{arguments.host}:{arguments.port}")
     print(f"Workspace: {Path(arguments.workspace).resolve()}")
     if arguments.reload:
         uvicorn.run(
-            "robot_canvas.api.app:create_app",
+            "robotstudio.api.app:create_app",
             factory=True,
             host=arguments.host,
             port=arguments.port,
             reload=True,
         )
     else:
-        from robot_canvas.api.app import create_app
+        from robotstudio.api.app import create_app
 
         uvicorn.run(
             create_app(arguments.workspace),
@@ -107,7 +107,7 @@ def _serve(arguments: argparse.Namespace) -> int:
 
 def _init(arguments: argparse.Namespace) -> int:
     workspace = Workspace(arguments.workspace)
-    stem = "robot-canvas-demo"
+    stem = "robotstudio-demo"
     if workspace.canvas_path(stem).exists() and not arguments.force:
         print(f"Demo suite already exists: {workspace.canvas_path(stem)}")
         return 0

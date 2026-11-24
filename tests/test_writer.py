@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from robot_canvas.generator.writer import escape_cell, write_document
-from robot_canvas.model.canvas import (
+from robotstudio.generator.writer import escape_cell, write_document
+from robotstudio.model.canvas import (
     Argument,
     BreakStep,
     CallStep,
@@ -28,7 +28,7 @@ from robot_canvas.model.canvas import (
     VarStep,
     WhileStep,
 )
-from robot_canvas.workspace.demo import demo_document
+from robotstudio.workspace.demo import demo_document
 
 GOLDEN = Path(__file__).parent / "golden" / "demo.robot"
 

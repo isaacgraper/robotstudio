@@ -61,7 +61,7 @@ def dry_run(source: str, workspace: Path | None = None) -> ValidationResult:
         return parsed
     temp_dir = workspace or Path.cwd()
     temp_dir.mkdir(parents=True, exist_ok=True)
-    path = temp_dir / ".robot_canvas_dryrun.robot"
+    path = temp_dir / ".robotstudio_dryrun.robot"
     path.write_text(source, encoding="utf-8")
     try:
         suite = TestSuite.from_file_system(path)

@@ -1,4 +1,4 @@
-"""Pydantic models for the Robot Canvas document."""
+"""Pydantic models for the Robotstudio document."""
 
 from __future__ import annotations
 
@@ -235,7 +235,7 @@ class CanvasDocument(BaseModel):
 
     def robot_text(self) -> str:
         """Render this document as Robot Framework source."""
-        from robot_canvas.generator.writer import write_document
+        from robotstudio.generator.writer import write_document
 
         return write_document(self)
 

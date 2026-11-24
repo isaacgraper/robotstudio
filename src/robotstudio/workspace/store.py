@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from robot_canvas.generator.writer import write_document
-from robot_canvas.model.canvas import CanvasDocument
+from robotstudio.generator.writer import write_document
+from robotstudio.model.canvas import CanvasDocument
 
 _SLUG_INVALID = re.compile(r"[^a-z0-9]+")
 _STEM = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -146,7 +146,7 @@ def _atomic_write(path: Path, text: str) -> None:
     """Write text through a temporary file and an atomic replace."""
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(
-        dir=path.parent, prefix=".robot_canvas-", suffix=".tmp"
+        dir=path.parent, prefix=".robotstudio-", suffix=".tmp"
     )
     try:
         with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:

@@ -1,4 +1,4 @@
-"""FastAPI application for Robot Canvas."""
+"""FastAPI application for Robotstudio."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from robot_canvas import __version__
-from robot_canvas.api.schemas import (
+from robotstudio import __version__
+from robotstudio.api.schemas import (
     DocumentRequest,
     HealthResponse,
     InitResponse,
@@ -22,28 +22,28 @@ from robot_canvas.api.schemas import (
     SuiteResponse,
     ValidationRequest,
 )
-from robot_canvas.generator.validation import dry_run, parse_source
-from robot_canvas.keywords.catalog import (
+from robotstudio.generator.validation import dry_run, parse_source
+from robotstudio.keywords.catalog import (
     Catalog,
     clear_catalog_cache,
     configured_libraries,
     load_catalog,
 )
-from robot_canvas.workspace.demo import demo_document
-from robot_canvas.workspace.store import SuiteEntry, Workspace, WorkspaceError
+from robotstudio.workspace.demo import demo_document
+from robotstudio.workspace.store import SuiteEntry, Workspace, WorkspaceError
 
 WEB_DIST = Path(__file__).resolve().parent.parent / "web_dist"
 
 
 def default_workspace() -> Path:
     """Return the configured workspace directory."""
-    return Path(os.environ.get("ROBOT_CANVAS_WORKSPACE", "workspace"))
+    return Path(os.environ.get("ROBOTSTUDIO_WORKSPACE", "workspace"))
 
 
 def create_app(workspace: Path | str | None = None) -> FastAPI:
-    """Build the Robot Canvas application."""
+    """Build the Robotstudio application."""
     app = FastAPI(
-        title="Robot Canvas",
+        title="Robotstudio",
         version=__version__,
         description="Visual authoring and execution for Robot Framework.",
     )
@@ -62,7 +62,7 @@ def create_app(workspace: Path | str | None = None) -> FastAPI:
     )
     _register_api(app)
     _register_web(app)
-    logger.info("Robot Canvas workspace: {}", app.state.workspace.root)
+    logger.info("Robotstudio workspace: {}", app.state.workspace.root)
     return app
 
 
@@ -171,8 +171,8 @@ def _register_api(app: FastAPI) -> None:
     def init_workspace() -> InitResponse:
         workspace = _store(app)
         document = demo_document()
-        created = not workspace.canvas_path("robot-canvas-demo").is_file()
-        saved = workspace.save(document, "robot-canvas-demo")
+        created = not workspace.canvas_path("robotstudio-demo").is_file()
+        saved = workspace.save(document, "robotstudio-demo")
         validation = parse_source(saved.robot_text)
         return InitResponse(
             created=created,
@@ -193,7 +193,7 @@ def _register_web(app: FastAPI) -> None:
         @app.get("/")
         def api_only() -> dict[str, str]:
             return {
-                "name": "Robot Canvas",
+                "name": "Robotstudio",
                 "version": __version__,
                 "message": "Frontend assets are not built. Run the Vite dev server.",
             }

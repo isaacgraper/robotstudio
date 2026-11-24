@@ -144,7 +144,7 @@ function App() {
     return (
       <div className="app-loading">
         <div className="spinner" />
-        <p>Loading Robot Canvas...</p>
+        <p>Loading Robotstudio...</p>
       </div>
     );
   }
@@ -152,7 +152,7 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Robot Canvas</h1>
+        <h1>Robotstudio</h1>
         <div className="header-actions">
           <label className="expert-toggle">
             <input
@@ -255,7 +255,7 @@ function App() {
             </>
           ) : (
             <div className="empty-state">
-              <h2>Welcome to Robot Canvas</h2>
+              <h2>Welcome to Robotstudio</h2>
               <p>Select a suite from the sidebar or create a new one to start building.</p>
               <button onClick={handleNewSuite} className="primary">
                 Create Demo Suite

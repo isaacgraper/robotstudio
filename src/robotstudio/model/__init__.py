@@ -1,6 +1,6 @@
 """Canvas document models."""
 
-from robot_canvas.model.canvas import (
+from robotstudio.model.canvas import (
     Argument,
     BreakStep,
     CallStep,

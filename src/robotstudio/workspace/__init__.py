@@ -1,7 +1,7 @@
-"""Workspace management for Robot Canvas."""
+"""Workspace management for Robotstudio."""
 
-from robot_canvas.workspace.demo import demo_document
-from robot_canvas.workspace.store import (
+from robotstudio.workspace.demo import demo_document
+from robotstudio.workspace.store import (
     SavedSuite,
     SuiteEntry,
     Workspace,
