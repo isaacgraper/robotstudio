@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Visual authoring and execution environment for Robot Framework suites"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "isaacgraper", email = "isaackleimmanngraper@gmail.com" }]
 keywords = [
   "robotframework",
@@ -18,7 +18,6 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Framework :: Robot Framework",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
