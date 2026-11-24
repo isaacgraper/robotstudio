@@ -48,7 +48,7 @@ Front ends, each a thin layer over the modules above:
 
 Run gating: `ROBOTSTUDIO_ALLOW_RUN` (default true) and `--no-run` are read through `settings.allow_run_from_env`, and the API, MCP and CLI all honour them. The README's statement that there is no opt-in flag is outdated.
 
-Web (`web/src`): `types/canvas.ts` mirrors the Pydantic model by hand. `blocks/definitions.ts`, `mutators.ts` and `serialization.ts` map Blockly blocks to and from `CanvasDocument`, and `components/BlocklyEditor.tsx` hosts the editor. When you change the model in `canvas.py`, update `types/canvas.ts` and `blocks/serialization.ts` too. The frontend must not re-implement generation or validation. It calls `/api/preview` and `/api/validate`.
+Web (`web/src`): `types/canvas.ts` mirrors the Pydantic model by hand. `blocks/definitions.ts` defines the Blockly blocks and `blocks/serialization.ts` maps `CanvasDocument` to and from Blockly workspace JSON (`{ blocks: { languageVersion, blocks: [...] } }`). `components/BlocklyEditor.tsx` hosts the editor. Every value is a text field. IF/ELSE IF/ELSE and TRY/EXCEPT/ELSE/FINALLY are sibling blocks in a statement chain, restricted by connection checks, not mutators. `workspaceToModel` takes the open document as a base and only replaces tests, keywords and libraries, so settings the canvas does not edit survive a save. When you change the model in `canvas.py`, update `types/canvas.ts` and `blocks/serialization.ts` too. The frontend must not re-implement generation or validation. It calls `/api/preview` and `/api/validate`.
 
 Environment: `ROBOTSTUDIO_WORKSPACE` (default `workspace`), `ROBOTSTUDIO_LIBRARIES`, `ROBOTSTUDIO_ALLOW_RUN`.
 
