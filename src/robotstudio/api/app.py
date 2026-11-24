@@ -8,7 +8,7 @@ from pathlib import Path
 import robot
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -250,7 +250,68 @@ def _run_response(summary: RunSummary) -> RunResponse:
     )
 
 
+LLMS_TXT = """# Robotstudio
+
+Robotstudio is a visual authoring, execution and export platform for Robot
+Framework. It stores each suite as a canvas document (`*.canvas.json`) and
+generates deterministic `.robot` source.
+
+## CLI
+
+    robotstudio init    [--workspace DIR] [--force]
+    robotstudio serve   [--workspace DIR] [--host HOST] [--port PORT]
+    robotstudio generate DOCUMENT.json [--out FILE.robot]
+    robotstudio validate DOCUMENT.json [--dry-run]
+    robotstudio catalog [--library NAME] [--curated]
+    robotstudio run     STEM [--workspace DIR] [--timeout SECONDS]
+    robotstudio runs    [--workspace DIR]
+    robotstudio export  RUN_ID FORMAT [--workspace DIR] [--out FILE]
+    robotstudio mcp     [--workspace DIR]
+
+Export formats: junit, results-csv, cases-csv, results-json, bundle.
+
+## HTTP API
+
+- GET  /api/health
+- GET  /api/catalog
+- GET  /api/suites
+- POST /api/suites
+- GET  /api/suites/{stem}
+- PUT  /api/suites/{stem}
+- DEL  /api/suites/{stem}
+- POST /api/suites/{stem}/run
+- GET  /api/runs
+- GET  /api/runs/{run_id}
+- GET  /api/runs/{run_id}/export/{format}
+- POST /api/preview
+- POST /api/validate
+- POST /api/init
+- GET  /openapi.json
+
+## MCP
+
+Run `robotstudio mcp` for a stdio MCP server (needs the `mcp` extra).
+Tools are prefixed `studio_`: list_suites, get_suite, save_suite,
+delete_suite, read_robot, import_robot, preview, validate, search_keywords,
+describe_keyword, list_libraries, refresh_catalog, run_suite, list_runs,
+get_run, export_run.
+
+## Workspace
+
+    <workspace>/<stem>.canvas.json   authored document
+    <workspace>/<stem>.robot         generated source
+    <workspace>/.runs/<run_id>/      results, console log, robot artifacts
+
+One run at a time. Runs have a hard timeout and write only inside the
+workspace.
+"""
+
+
 def _register_web(app: FastAPI) -> None:
+    @app.get("/llms.txt", include_in_schema=False, response_class=PlainTextResponse)
+    def llms_txt() -> str:
+        return LLMS_TXT
+
     index = WEB_DIST / "index.html"
     if not index.is_file():
 
