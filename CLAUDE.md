@@ -53,3 +53,14 @@ Web (`web/src`): `types/canvas.ts` mirrors the Pydantic model by hand. `blocks/d
 Environment: `ROBOTSTUDIO_WORKSPACE` (default `workspace`), `ROBOTSTUDIO_LIBRARIES`, `ROBOTSTUDIO_ALLOW_RUN`.
 
 Release: version lives in `pyproject.toml` (and `web/package.json`). `publish.yml` builds the frontend into the wheel, checks the tag matches the version, and publishes to PyPI on a GitHub Release. Update `CHANGELOG.md` (Keep a Changelog) with releases.
+
+## Token and workflow rules
+
+### Task sizing
+- Small tasks (1-2 files, quick bug fixes, minor UI tweaks): no plan. Read only the target files, apply the minimal fix directly, and explain in under 3 sentences.
+- Multi-file features, refactors or complex updates (3+ files or architectural changes): before writing code, write a concise plan of at most 40 lines with Goal, Target Files, Key Constraints and a Checklist. Stop and wait for approval before executing, and report progress against the checklist as each step finishes. Put the plan in a `PLAN.md` file only when asked, and ask before deleting it.
+
+### Context and output hygiene
+- Never scan or read the entire codebase unless explicitly asked. Inspect only the files tied to the task.
+- Output targeted edits or specific functions instead of rewriting unchanged files.
+- Keep responses concise: no filler intros, no unsolicited refactoring.
