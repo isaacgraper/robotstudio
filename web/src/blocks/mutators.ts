@@ -252,3 +252,5 @@ export const mutators = {
   try_mutator: tryMutator,
   call_mutator: callMutator,
 };
+
+export { ifMutator, tryMutator, callMutator };
