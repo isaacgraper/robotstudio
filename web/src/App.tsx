@@ -11,20 +11,9 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { BlocklyEditor } from "./components/BlocklyEditor";
-import { fetchCatalog, fetchSuites, fetchSuite, saveSuite, updateSuite, deleteSuite, previewDocument, validateDocument, initWorkspace, runSuite, runExportUrl, catalogToKeywordOptions } from "./api/client";
-import type { RunSummary } from "./api/client";
+import { fetchCatalog, fetchSuites, fetchSuite, saveSuite, updateSuite, deleteSuite, previewDocument, validateDocument, initWorkspace, createSuite, runSuite, runExportUrl, catalogToKeywordOptions } from "./api/client";
+import type { RunSummary, SuiteEntry } from "./api/client";
 import type { CanvasDocument } from "./types/canvas";
-
-/**
- * Suite entry as displayed in the sidebar list.
- */
-interface SuiteEntry {
-  stem: string;
-  name: string;
-  tests: number;
-  keywords: number;
-  updated: string;
-}
 
 /**
  * App - Root component for the Robotstudio web application.
@@ -93,12 +82,31 @@ function App() {
   };
 
   const handleNewSuite = async () => {
+    const name = window.prompt("Suite name", "New Suite")?.trim();
+    if (!name) return;
+    setError(null);
+    try {
+      const created = await createSuite(name);
+      const list = await fetchSuites();
+      setSuites(list);
+      const entry = list.find((suite) => suite.stem === created.stem);
+      if (entry) await handleSuiteSelect(entry);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create suite");
+      console.error(e);
+    }
+  };
+
+  const handleCreateDemo = async () => {
+    setError(null);
     try {
       const data = await initWorkspace();
-      setSuites((prev) => [data.suite, ...prev]);
-      await handleSuiteSelect(data.suite);
+      const list = await fetchSuites();
+      setSuites(list);
+      const entry = list.find((suite) => suite.stem === data.suite.stem);
+      if (entry) await handleSuiteSelect(entry);
     } catch (e) {
-      setError("Failed to create suite");
+      setError("Failed to create demo suite");
       console.error(e);
     }
   };
@@ -344,7 +352,7 @@ function App() {
             <div className="empty-state">
               <h2>Welcome to Robotstudio</h2>
               <p>Select a suite from the sidebar or create a new one to start building.</p>
-              <button onClick={handleNewSuite} className="primary">
+              <button onClick={handleCreateDemo} className="primary">
                 Create Demo Suite
               </button>
             </div>

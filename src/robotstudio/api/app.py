@@ -17,6 +17,7 @@ from robotstudio.api.schemas import (
     DocumentRequest,
     HealthResponse,
     InitResponse,
+    NewSuiteRequest,
     PreviewResponse,
     RunRequest,
     RunResponse,
@@ -31,6 +32,7 @@ from robotstudio.keywords.catalog import (
     configured_libraries,
     load_catalog,
 )
+from robotstudio.model.canvas import CanvasDocument
 from robotstudio.runner import (
     RunBusyError,
     RunError,
@@ -42,7 +44,7 @@ from robotstudio.runner import (
 )
 from robotstudio.settings import allow_run_from_env
 from robotstudio.workspace.demo import demo_document
-from robotstudio.workspace.store import SuiteEntry, Workspace, WorkspaceError
+from robotstudio.workspace.store import SuiteEntry, Workspace, WorkspaceError, slugify
 
 WEB_DIST = Path(__file__).resolve().parent.parent / "web_dist"
 
@@ -130,6 +132,23 @@ def _register_api(app: FastAPI) -> None:
             robot_path=str(saved.robot_path),
             robot_text=saved.robot_text,
             validation=validation.as_dict(),
+        )
+
+    @app.post("/api/suites/new", response_model=SuiteResponse)
+    def create_suite(request: NewSuiteRequest) -> SuiteResponse:
+        workspace = _store(app)
+        name = request.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Suite name is required")
+        stem = slugify(name)
+        if workspace.canvas_path(stem).is_file():
+            raise HTTPException(status_code=409, detail=f"Suite already exists: {stem}")
+        document = CanvasDocument(name=name)
+        saved = workspace.save(document, stem)
+        return SuiteResponse(
+            stem=saved.stem,
+            document=document,
+            robot_text=saved.robot_text,
         )
 
     @app.get("/api/suites/{stem}", response_model=SuiteResponse)
@@ -288,6 +307,7 @@ Export formats: junit, results-csv, cases-csv, results-json, bundle.
 - GET  /api/catalog
 - GET  /api/suites
 - POST /api/suites
+- POST /api/suites/new
 - GET  /api/suites/{stem}
 - PUT  /api/suites/{stem}
 - DEL  /api/suites/{stem}

@@ -14,7 +14,15 @@ export async function fetchCatalog() {
   return res.json();
 }
 
-export async function fetchSuites() {
+export interface SuiteEntry {
+  stem: string;
+  name: string;
+  tests: number;
+  keywords: number;
+  updated: string;
+}
+
+export async function fetchSuites(): Promise<SuiteEntry[]> {
   const res = await fetch(`${API_BASE}/suites`);
   if (!res.ok) throw new Error("Suites fetch failed");
   return res.json();
@@ -75,6 +83,19 @@ export async function validateDocument(document: CanvasDocument, dryRun = false)
 export async function initWorkspace() {
   const res = await fetch(`${API_BASE}/init`, { method: "POST" });
   if (!res.ok) throw new Error("Init failed");
+  return res.json();
+}
+
+export async function createSuite(name: string) {
+  const res = await fetch(`${API_BASE}/suites/new`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ detail: "Create failed" }));
+    throw new Error(detail.detail || "Create failed");
+  }
   return res.json();
 }
 

@@ -34,6 +34,27 @@ def test_init_then_list_and_get(client: TestClient) -> None:
     assert detail["document"]["name"] == "Robotstudio Demo"
 
 
+def test_create_suite(client: TestClient) -> None:
+    response = client.post("/api/suites/new", json={"name": "My Suite"})
+    assert response.status_code == 200
+    created = response.json()
+    assert created["stem"] == "my-suite"
+    assert created["document"]["name"] == "My Suite"
+    assert created["document"]["tests"] == []
+
+    suites = client.get("/api/suites").json()
+    assert [entry["stem"] for entry in suites] == ["my-suite"]
+
+
+def test_create_suite_requires_a_name(client: TestClient) -> None:
+    assert client.post("/api/suites/new", json={"name": "   "}).status_code == 400
+
+
+def test_create_suite_rejects_a_duplicate(client: TestClient) -> None:
+    assert client.post("/api/suites/new", json={"name": "Dup"}).status_code == 200
+    assert client.post("/api/suites/new", json={"name": "Dup"}).status_code == 409
+
+
 def test_preview_and_validate(client: TestClient) -> None:
     document = demo_document().model_dump(mode="json")
     preview = client.post("/api/preview", json={"document": document}).json()

@@ -14,6 +14,12 @@ class DocumentRequest(BaseModel):
     stem: str | None = None
 
 
+class NewSuiteRequest(BaseModel):
+    """A name for a new, empty suite."""
+
+    name: str
+
+
 class PreviewResponse(BaseModel):
     """Generated source and validation outcome for a document."""
 
