@@ -25,8 +25,10 @@ from robot.parsing.model.statements import (
     DefaultTags,
     Documentation,
     EmptyLine,
+    Error,
     LibraryImport,
     Metadata,
+    ResourceImport,
     Return,
     Setup,
     SuiteSetup,
@@ -38,6 +40,7 @@ from robot.parsing.model.statements import (
     TestSetup,
     TestTags,
     TestTeardown,
+    TestTimeout,
     Timeout,
     Variable,
 )
@@ -64,6 +67,9 @@ from robotstudio.model.canvas import (
 )
 from robotstudio.model.canvas import (
     LibraryImport as CanvasLibraryImport,
+)
+from robotstudio.model.canvas import (
+    ResourceImport as CanvasResourceImport,
 )
 from robotstudio.model.canvas import (
     TestCase as CanvasTestCase,
@@ -132,94 +138,95 @@ def _token_values(tokens: Any) -> list[str]:
     return [_token_value(t) for t in tokens]
 
 
+def _values(tokens: Any) -> list[str]:
+    """Extract the non-empty, stripped values from a token sequence."""
+    values = []
+    for token in tokens:
+        value = _token_value(token).strip()
+        if value:
+            values.append(value)
+    return values
+
+
 def _parse_header_condition(header: Any) -> str:
     """Extract condition text from a control structure header."""
     if not header or not hasattr(header, "tokens"):
         return ""
-    parts = []
-    skip_next = False
-    for token in header.tokens:
-        if skip_next:
-            skip_next = False
-            continue
-        val = _token_value(token)
-        if val in ("IF", "ELSE", "FOR", "WHILE", "TRY", "EXCEPT", "FINALLY"):
-            skip_next = True  # Skip the following separator
-            continue
-        if val.strip() and val != "\n":
-            parts.append(val)
-    return " ".join(parts)
+    values = _values(header.tokens)
+    if values and values[0] in ("IF", "ELSE IF", "WHILE"):
+        values = values[1:]
+    return " ".join(value for value in values if not value.startswith("limit="))
 
 
 def _parse_keyword_call(stmt: Any) -> CallStep:
     """Parse a KeywordCall or TemplateArguments into a CallStep."""
-    tokens = getattr(stmt, "tokens", [])
-    values = _token_values(tokens)
+    keyword_name = ""
+    args: list[Argument] = []
+    assign: list[str] = []
+    comment = None
 
-    # Check for assignment like ${var} =
-    keyword_name = None
-    args = []
-    assign = []
-
-    i = 0
-    while i < len(values):
-        v = values[i].strip()
-        if not v:
-            i += 1
+    for token in getattr(stmt, "tokens", []):
+        token_type = getattr(token, "type", "")
+        value = _token_value(token).strip()
+        if not value:
             continue
-        if v.endswith("=") and v.startswith("${"):
-            # Assignment target
-            assign.append(v.rstrip(" ="))
-        elif keyword_name is None:
-            keyword_name = v
-        elif "=" in v and not v.startswith("${"):
-            # Named argument
-            parts = v.split("=", 1)
-            args.append(Argument(name=parts[0], value=parts[1]))
-        else:
-            args.append(Argument(value=v))
-        i += 1
+        if token_type == "ASSIGN":
+            name = value[:-1].strip() if value.endswith("=") else value
+            if name:
+                assign.append(name)
+        elif token_type == "KEYWORD":
+            keyword_name = value
+        elif token_type == "COMMENT":
+            comment = value.lstrip("#").strip()
+        elif token_type == "ARGUMENT":
+            if "=" in value and not value.startswith(("${", "@{", "&{")):
+                name, _, arg_value = value.partition("=")
+                args.append(Argument(name=name, value=arg_value))
+            else:
+                args.append(Argument(value=value))
+        elif not keyword_name:
+            keyword_name = value
 
-    if keyword_name is None:
+    if not keyword_name:
         keyword_name = "Unknown"
 
-    # Check for embedded arguments in keyword name
-    embedded = {}
-    import re
-
-    for match in re.finditer(r"\$\{([^}]+)\}", keyword_name):
-        embedded[match.group(1)] = ""
-
     return CallStep(
-        keyword=KeywordRef(name=keyword_name, embedded=embedded),
+        keyword=KeywordRef(name=keyword_name),
         args=args,
         assign=assign,
+        comment=comment,
     )
 
 
 def _parse_setup_teardown(stmt: Any) -> CallStep | None:
     """Parse a Setup/Teardown statement."""
-    header = getattr(stmt, "header", None)
-    if header and hasattr(header, "tokens"):
-        values = _token_values(header.tokens)
-        # Header format: [Setup/Teardown] Keyword arg1 arg2...
-        kw_values = [
-            v
-            for v in values
-            if v.strip() not in ("[Setup]", "[Teardown]", "Setup", "Teardown")
-        ]
-        if kw_values:
-            keyword_name = kw_values[0]
-            args = [Argument(value=v) for v in kw_values[1:]]
-            return CallStep(keyword=KeywordRef(name=keyword_name), args=args)
-    # Fallback to tokens
-    tokens = getattr(stmt, "tokens", [])
-    values = _token_values(tokens)
-    if len(values) < 2:
+    tokens = getattr(getattr(stmt, "header", None), "tokens", None)
+    if tokens is None:
+        tokens = getattr(stmt, "tokens", [])
+    values = _values(tokens)
+    if values and values[0] in (
+        "Suite Setup",
+        "Suite Teardown",
+        "Test Setup",
+        "Test Teardown",
+        "[Setup]",
+        "[Teardown]",
+    ):
+        values = values[1:]
+    if not values:
         return None
-    keyword_name = values[1] if len(values) > 1 else "Unknown"
-    args = [Argument(value=v) for v in values[2:]]
-    return CallStep(keyword=KeywordRef(name=keyword_name), args=args)
+    return CallStep(
+        keyword=KeywordRef(name=values[0]),
+        args=[Argument(value=value) for value in values[1:]],
+    )
+
+
+_FOR_FLAVORS: dict[str, Literal["in", "in_range", "in_enumerate", "in_zip"]] = {
+    "IN": "in",
+    "IN RANGE": "in_range",
+    "IN ENUMERATE": "in_enumerate",
+    "IN ZIP": "in_zip",
+}
 
 
 def _parse_for_stmt(stmt: For) -> ForStep:
@@ -230,22 +237,19 @@ def _parse_for_stmt(stmt: For) -> ForStep:
     loop_values: list[str] = []
 
     if header and hasattr(header, "tokens"):
-        tokens = header.tokens
-        values = _token_values(tokens)
-        in_seen = False
-        for v in values:
-            v_stripped = v.strip()
-            if v_stripped in ("FOR", "END"):
+        for token in header.tokens:
+            token_type = getattr(token, "type", "")
+            value = _token_value(token).strip()
+            if not value:
                 continue
-            if v_stripped in ("IN", "IN_RANGE", "IN_ENUMERATE", "IN_ZIP"):
-                if v_stripped in ("IN_RANGE", "IN_ENUMERATE", "IN_ZIP"):
-                    flavor = v_stripped  # type: ignore[assignment]
-                in_seen = True
-                continue
-            if v_stripped and not in_seen:
-                variables.append(v_stripped)
-            elif v_stripped and in_seen:
-                loop_values.append(v_stripped)
+            if token_type == "VARIABLE":
+                variables.append(value)
+            elif token_type == "ARGUMENT":
+                loop_values.append(value)
+            else:
+                normalized = " ".join(value.upper().split())
+                if normalized in _FOR_FLAVORS:
+                    flavor = _FOR_FLAVORS[normalized]
 
     steps = _parse_body(stmt.body) if hasattr(stmt, "body") else []
 
@@ -294,22 +298,22 @@ def _parse_if_stmt(stmt: If) -> IfStep:
 
 def _parse_while_stmt(stmt: While) -> WhileStep:
     """Parse a WHILE loop."""
-    condition = getattr(stmt, "condition", "") or ""
+    condition = (getattr(stmt, "condition", "") or "").strip()
     if not condition:
         condition = _parse_header_condition(getattr(stmt, "header", None))
 
     limit = None
     until = False
 
-    # Check for LIMIT and UNTIL in header
     header = getattr(stmt, "header", None)
     if header and hasattr(header, "tokens"):
-        values = _token_values(header.tokens)
-        for i, v in enumerate(values):
-            v_stripped = v.strip()
-            if v_stripped == "LIMIT" and i + 1 < len(values):
-                limit = values[i + 1]
-            if v_stripped == "UNTIL":
+        for token in header.tokens:
+            if getattr(token, "type", "") != "OPTION":
+                continue
+            option = _token_value(token).strip()
+            if option.startswith("limit="):
+                limit = option.partition("=")[2]
+            elif option == "until":
                 until = True
 
     steps = _parse_body(stmt.body) if hasattr(stmt, "body") else []
@@ -329,36 +333,34 @@ def _parse_try_stmt(stmt: Try) -> TryStep:
     else_steps = []
     finally_steps = []
 
-    # TRY uses a linked list via 'next' attribute
+    # TRY uses a linked list via 'next' attribute.
     current = getattr(stmt, "next", None)
     while current:
-        header_text = ""
-        if hasattr(current, "header") and current.header:
-            header_tokens = current.header.tokens
-            header_text = " ".join(_token_value(t) for t in header_tokens).strip()
+        header = getattr(current, "header", None)
+        values = _values(header.tokens) if header and hasattr(header, "tokens") else []
+        label = values[0] if values else ""
 
-        if "EXCEPT" in header_text.upper():
-            patterns = getattr(current, "patterns", ()) or ()
-            variable = (
-                getattr(current, "variable", None)
-                or getattr(current, "assign", None)
-                or "error"
-            )
-            if isinstance(variable, (list, tuple)):
-                variable = variable[0] if variable else "error"
+        if label == "EXCEPT":
+            patterns = []
+            variable = None
+            index = 1
+            while index < len(values):
+                if values[index] == "AS":
+                    variable = values[index + 1] if index + 1 < len(values) else None
+                    break
+                patterns.append(values[index])
+                index += 1
             except_steps = _parse_body(current.body) if hasattr(current, "body") else []
             excepts.append(
                 ExceptClause(
-                    patterns=list(patterns),
+                    patterns=patterns,
                     variable=variable,
                     steps=except_steps,
                 )
             )
-
-        elif "ELSE" in header_text.upper():
+        elif label == "ELSE":
             else_steps = _parse_body(current.body) if hasattr(current, "body") else []
-
-        elif "FINALLY" in header_text.upper():
+        elif label == "FINALLY":
             finally_steps = (
                 _parse_body(current.body) if hasattr(current, "body") else []
             )
@@ -375,32 +377,31 @@ def _parse_try_stmt(stmt: Try) -> TryStep:
 
 def _parse_var_stmt(stmt: Var) -> VarStep:
     """Parse a VAR statement."""
-    tokens = getattr(stmt, "tokens", [])
-    values = _token_values(tokens)
     name = ""
     value = ""
     scope = None
 
-    for v in values:
-        v_stripped = v.strip()
-        if v_stripped in ("VAR", "SCOPE"):
+    for token in getattr(stmt, "tokens", []):
+        token_type = getattr(token, "type", "")
+        raw = _token_value(token).strip()
+        if not raw or raw == "VAR":
             continue
-        if v_stripped.upper() in ("TEST", "TASK", "SUITE", "GLOBAL"):
-            scope = v_stripped.upper()
-        elif not name:
-            name = v_stripped
-        else:
-            value = v_stripped
+        if token_type == "OPTION" and raw.startswith("scope="):
+            scope = raw.partition("=")[2].upper()
+        elif token_type == "VARIABLE":
+            name = raw
+        elif token_type == "ARGUMENT":
+            value = raw
 
     return VarStep(name=name, value=value, scope=scope)
 
 
 def _parse_return_stmt(stmt: Return) -> ReturnStep:
     """Parse a RETURN statement."""
-    tokens = getattr(stmt, "tokens", [])
-    values = _token_values(tokens)
-    return_values = [v for v in values if v.strip() not in ("RETURN",)]
-    return ReturnStep(values=return_values)
+    values = [
+        value for value in _values(getattr(stmt, "tokens", [])) if value != "RETURN"
+    ]
+    return ReturnStep(values=values)
 
 
 def _parse_body(body: list[Any]) -> list[Step]:
@@ -410,8 +411,10 @@ def _parse_body(body: list[Any]) -> list[Step]:
         if isinstance(stmt, EmptyLine):
             continue
         if isinstance(stmt, Comment):
-            text = " ".join(_token_values(getattr(stmt, "tokens", [])))
-            steps.append(CommentStep(text=f"# {text}"))
+            text = " ".join(_values(getattr(stmt, "tokens", [])))
+            steps.append(
+                CommentStep(text=text if text.startswith("#") else f"# {text}")
+            )
             continue
         if isinstance(stmt, (KeywordCall, TemplateArguments)):
             steps.append(_parse_keyword_call(stmt))
@@ -431,15 +434,22 @@ def _parse_body(body: list[Any]) -> list[Step]:
             steps.append(BreakStep())
         elif isinstance(stmt, Continue):
             steps.append(ContinueStep())
+        elif isinstance(stmt, Error):
+            # Robot parser treats RETURN as an Error statement
+            values = _values(getattr(stmt, "tokens", []))
+            if values and values[0] == "RETURN":
+                steps.append(_parse_return_stmt(stmt))
+            else:
+                raw_text = " ".join(values)
+                if raw_text.strip():
+                    steps.append(RawStep(lines=[raw_text]))
         elif isinstance(stmt, Documentation):
-            tokens = getattr(stmt, "tokens", [])
-            values = _token_values(tokens)
-            doc = " ".join(v for v in values if v not in ("[Documentation]",))
+            values = _values(getattr(stmt, "tokens", []))
+            doc = " ".join(value for value in values if value != "[Documentation]")
             steps.append(CommentStep(text=f"# {doc}"))
         else:
             # Fallback: preserve as raw
-            tokens = getattr(stmt, "tokens", [])
-            raw_text = " ".join(_token_values(tokens))
+            raw_text = " ".join(_values(getattr(stmt, "tokens", [])))
             if raw_text.strip():
                 steps.append(RawStep(lines=[raw_text]))
     return steps
@@ -458,30 +468,27 @@ def _parse_test_case(test: TestCase) -> CanvasTestCase:
 
     for stmt in getattr(test, "body", []):
         if isinstance(stmt, Documentation):
-            tokens = getattr(stmt, "tokens", [])
-            values = _token_values(tokens)
-            doc = " ".join(v for v in values if v not in ("[Documentation]",))
+            values = _values(getattr(stmt, "tokens", []))
+            doc = " ".join(value for value in values if value != "[Documentation]")
         elif isinstance(stmt, Tags):
-            tokens = getattr(stmt, "tokens", [])
-            values = _token_values(tokens)
-            tags = [v.strip() for v in values if v.strip() and v not in ("[Tags]",)]
+            values = _values(getattr(stmt, "tokens", []))
+            tags = [value for value in values if value != "[Tags]"]
         elif isinstance(stmt, Setup):
             setup = _parse_setup_teardown(stmt)
         elif isinstance(stmt, Teardown):
             teardown = _parse_setup_teardown(stmt)
         elif isinstance(stmt, Timeout):
-            tokens = getattr(stmt, "tokens", [])
-            values = _token_values(tokens)
-            timeout = next((v for v in values if v not in ("[Timeout]",)), None)
+            values = _values(getattr(stmt, "tokens", []))
+            timeout = next((value for value in values if value != "[Timeout]"), None)
         elif isinstance(stmt, Template):
-            tokens = getattr(stmt, "tokens", [])
-            values = _token_values(tokens)
-            template = next((v for v in values if v not in ("[Template]",)), None)
+            values = _values(getattr(stmt, "tokens", []))
+            template = next((value for value in values if value != "[Template]"), None)
         elif isinstance(stmt, TemplateArguments):
             # This is a test step using template
             steps.append(_parse_keyword_call(stmt))
         elif isinstance(
-            stmt, (KeywordCall, If, For, While, Try, Var, Return, Break, Continue)
+            stmt,
+            (KeywordCall, If, For, While, Try, Var, Return, Break, Continue, Error),
         ):
             step_list = _parse_body([stmt])
             if step_list:
@@ -489,11 +496,12 @@ def _parse_test_case(test: TestCase) -> CanvasTestCase:
         elif isinstance(stmt, EmptyLine):
             continue
         elif isinstance(stmt, Comment):
-            text = " ".join(_token_values(getattr(stmt, "tokens", [])))
-            steps.append(CommentStep(text=f"# {text}"))
+            text = " ".join(_values(getattr(stmt, "tokens", [])))
+            steps.append(
+                CommentStep(text=text if text.startswith("#") else f"# {text}")
+            )
         else:
-            tokens = getattr(stmt, "tokens", [])
-            raw_text = " ".join(_token_values(tokens))
+            raw_text = " ".join(_values(getattr(stmt, "tokens", [])))
             if raw_text.strip():
                 steps.append(RawStep(lines=[raw_text]))
 
@@ -521,23 +529,19 @@ def _parse_keyword(keyword: Keyword) -> KeywordDefinition:
 
     for stmt in getattr(keyword, "body", []):
         if isinstance(stmt, Arguments):
-            tokens = getattr(stmt, "tokens", [])
-            values = _token_values(tokens)
-            args = [
-                v.strip() for v in values if v.strip() and v not in ("[Arguments]",)
-            ]
+            values = _values(getattr(stmt, "tokens", []))
+            args = [value for value in values if value != "[Arguments]"]
         elif isinstance(stmt, Documentation):
-            tokens = getattr(stmt, "tokens", [])
-            values = _token_values(tokens)
-            doc = " ".join(v for v in values if v not in ("[Documentation]",))
+            values = _values(getattr(stmt, "tokens", []))
+            doc = " ".join(value for value in values if value != "[Documentation]")
         elif isinstance(stmt, Tags):
-            tokens = getattr(stmt, "tokens", [])
-            values = _token_values(tokens)
-            tags = [v.strip() for v in values if v.strip() and v not in ("[Tags]",)]
+            values = _values(getattr(stmt, "tokens", []))
+            tags = [value for value in values if value != "[Tags]"]
         elif isinstance(stmt, Teardown):
             teardown = _parse_setup_teardown(stmt)
         elif isinstance(
-            stmt, (KeywordCall, If, For, While, Try, Var, Return, Break, Continue)
+            stmt,
+            (KeywordCall, If, For, While, Try, Var, Return, Break, Continue, Error),
         ):
             step_list = _parse_body([stmt])
             if step_list:
@@ -545,11 +549,12 @@ def _parse_keyword(keyword: Keyword) -> KeywordDefinition:
         elif isinstance(stmt, EmptyLine):
             continue
         elif isinstance(stmt, Comment):
-            text = " ".join(_token_values(getattr(stmt, "tokens", [])))
-            steps.append(CommentStep(text=f"# {text}"))
+            text = " ".join(_values(getattr(stmt, "tokens", [])))
+            steps.append(
+                CommentStep(text=text if text.startswith("#") else f"# {text}")
+            )
         else:
-            tokens = getattr(stmt, "tokens", [])
-            raw_text = " ".join(_token_values(tokens))
+            raw_text = " ".join(_values(getattr(stmt, "tokens", [])))
             if raw_text.strip():
                 steps.append(RawStep(lines=[raw_text]))
 
@@ -567,11 +572,12 @@ def import_robot_file(path: Path | str) -> CanvasDocument:
     """Import a .robot file and return a CanvasDocument."""
     path = Path(path)
     source = path.read_text(encoding="utf-8")
-    _set_source_lines(source)
     model = get_model(source)
 
     name = path.stem
+    documentation = ""
     libraries = []
+    resources = []
     variables = []
     suite_setup = None
     suite_teardown = None
@@ -589,7 +595,12 @@ def import_robot_file(path: Path | str) -> CanvasDocument:
 
         if section_type == "SettingSection":
             for item in section.body:
-                if isinstance(item, LibraryImport):
+                if isinstance(item, Documentation):
+                    values = _values(getattr(item, "tokens", []))
+                    documentation = " ".join(
+                        value for value in values if value != "Documentation"
+                    )
+                elif isinstance(item, LibraryImport):
                     lib_name = getattr(item, "name", "")
                     lib_alias = getattr(item, "alias", None)
                     lib_args = getattr(item, "args", [])
@@ -597,6 +608,10 @@ def import_robot_file(path: Path | str) -> CanvasDocument:
                         CanvasLibraryImport(
                             name=lib_name, alias=lib_alias, args=lib_args
                         )
+                    )
+                elif isinstance(item, ResourceImport):
+                    resources.append(
+                        CanvasResourceImport(path=getattr(item, "name", ""))
                     )
                 elif isinstance(item, SuiteSetup):
                     suite_setup = _parse_setup_teardown(item)
@@ -607,76 +622,54 @@ def import_robot_file(path: Path | str) -> CanvasDocument:
                 elif isinstance(item, TestTeardown):
                     test_teardown = _parse_setup_teardown(item)
                 elif isinstance(item, DefaultTags):
-                    tokens = getattr(item, "tokens", [])
-                    values = _token_values(tokens)
+                    values = _values(getattr(item, "tokens", []))
                     default_tags = [
-                        v.strip()
-                        for v in values
-                        if v.strip() and v not in ("[Default Tags]", "Default Tags")
+                        value
+                        for value in values
+                        if value not in ("[Default Tags]", "Default Tags")
                     ]
                 elif isinstance(item, TestTags):
-                    tokens = getattr(item, "tokens", [])
-                    values = _token_values(tokens)
-                    # Check if it's Force Tags or Default Tags
-                    first_token = values[0] if values else ""
-                    if "Force" in first_token:
+                    values = _values(getattr(item, "tokens", []))
+                    label = values[0] if values else ""
+                    if "Force" in label:
                         force_tags = [
-                            v.strip()
-                            for v in values
-                            if v.strip() and v not in ("[Force Tags]", "Force Tags")
+                            value
+                            for value in values
+                            if value not in ("[Force Tags]", "Force Tags")
                         ]
                     else:
                         default_tags = [
-                            v.strip()
-                            for v in values
-                            if v.strip() and v not in ("[Default Tags]", "Default Tags")
+                            value
+                            for value in values
+                            if value not in ("[Default Tags]", "Default Tags")
                         ]
-                elif isinstance(item, Metadata):
-                    tokens = getattr(item, "tokens", [])
-                    values = _token_values(tokens)
-                    if len(values) >= 2:
-                        metadata[values[0]] = values[1]
-                elif isinstance(item, Variable):
-                    # Extract variable name from source using line/column info
-                    var_name = _extract_var_name_from_source(
-                        item.lineno,
-                        item.col_offset,
-                        item.end_lineno,
-                        item.end_col_offset,
+                elif isinstance(item, TestTimeout):
+                    values = _values(getattr(item, "tokens", []))
+                    test_timeout = (
+                        " ".join(value for value in values if value != "Test Timeout")
+                        or None
                     )
-                    tokens = getattr(item, "tokens", [])
-                    var_value = _first_arg_value(tokens)
-                    if var_name:
-                        variables.append(CanvasVariable(name=var_name, value=var_value))
-                    else:
-                        # Fallback: try to get name from tokens
-                        tokens = getattr(item, "tokens", [])
-                        values = _token_values(tokens)
-                        if len(values) >= 2:
-                            variables.append(
-                                CanvasVariable(name=values[0].strip(), value=var_value)
-                            )
+                elif isinstance(item, Metadata):
+                    metadata[getattr(item, "name", "")] = _first_arg_value(
+                        getattr(item, "tokens", [])
+                    )
+                elif isinstance(item, Variable):
+                    variables.append(
+                        CanvasVariable(
+                            name=getattr(item, "name", ""),
+                            value=_first_arg_value(getattr(item, "tokens", [])),
+                        )
+                    )
 
         elif section_type == "VariableSection":
             for item in section.body:
                 if isinstance(item, Variable):
-                    var_name = _extract_var_name_from_source(
-                        item.lineno,
-                        item.col_offset,
-                        item.end_lineno,
-                        item.end_col_offset,
+                    variables.append(
+                        CanvasVariable(
+                            name=getattr(item, "name", ""),
+                            value=_first_arg_value(getattr(item, "tokens", [])),
+                        )
                     )
-                    tokens = getattr(item, "tokens", [])
-                    var_value = _first_arg_value(tokens)
-                    if var_name:
-                        variables.append(CanvasVariable(name=var_name, value=var_value))
-                    else:
-                        tokens = getattr(item, "tokens", [])
-                        values = _token_values(tokens)
-                        if len(values) >= 2:
-                            variables.append(
-                                CanvasVariable(name=values[0].strip(), value=var_value)
-                            )
 
         elif section_type == "TestCaseSection":
             for item in section.body:
@@ -689,9 +682,9 @@ def import_robot_file(path: Path | str) -> CanvasDocument:
                     keywords.append(_parse_keyword(item))
 
     settings = SuiteSettings(
-        documentation="",
+        documentation=documentation,
         libraries=libraries,
-        resources=[],
+        resources=resources,
         variables=variables,
         suite_setup=suite_setup,
         suite_teardown=suite_teardown,
